@@ -73,6 +73,50 @@ async function isReplyToElias(message) {
   }
 }
 
+function extractExplicitMemories(content) {
+  const memories = [];
+  const patterns = [
+    /^(?:my name is|call me|i(?:'| a)m called)\s+([A-Za-z][A-Za-z0-9_-]{1,31})[.!?]?$/i,
+    /^(?:please call me)\s+([A-Za-z][A-Za-z0-9_-]{1,31})[.!?]?$/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (!match) continue;
+
+    memories.push({
+      memory: `User prefers to be called ${match[1].trim()}`,
+      importance: 1
+    });
+    break;
+  }
+
+  return memories;
+}
+
+function mergeMemories(...groups) {
+  const merged = [];
+  const seen = new Set();
+
+  for (const group of groups) {
+    for (const item of group || []) {
+      if (typeof item?.memory !== 'string' || !item.memory.trim()) continue;
+
+      const memory = item.memory.trim().replace(/\s+/g, ' ').slice(0, 500);
+      const key = memory.toLowerCase();
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      merged.push({
+        memory,
+        importance: Math.min(1, Math.max(0, Number(item.importance) || 0.5))
+      });
+    }
+  }
+
+  return merged;
+}
+
 async function sendLongReply(message, reply) {
   const text = reply.trim();
   if (!text) return;
@@ -91,8 +135,6 @@ async function respondToMessage(message, mode) {
   const content = cleanContent(message);
   if (!content) return;
 
-  // Fetch previous conversation context before inserting the current user message,
-  // so the current message is not duplicated in the model input.
   const [history, memories] = await Promise.all([
     getRecentMessages(config.guildId, message.channelId, config.maxContextMessages),
     getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
@@ -121,7 +163,6 @@ async function respondToMessage(message, mode) {
 
   await sendLongReply(message, result.reply);
 
-  // Persist Elias's own response so future turns know exactly what she said.
   await saveMessage({
     guildId: message.guildId,
     channelId: message.channelId,
@@ -131,8 +172,11 @@ async function respondToMessage(message, mode) {
     isBot: true
   });
 
-  if (result.memories.length) {
-    await saveMemories(config.guildId, message.author.id, result.memories);
+  const explicitMemories = extractExplicitMemories(content);
+  const allMemories = mergeMemories(explicitMemories, result.memories);
+
+  if (allMemories.length) {
+    await saveMemories(config.guildId, message.author.id, allMemories);
   }
 }
 
@@ -190,7 +234,6 @@ client.on('messageCreate', async (message) => {
 
     const mode = await getChannelMode(config.guildId, message.channelId);
 
-    // Unconfigured channels are silent by design.
     if (!mode || mode === 'blocked') return;
 
     const content = cleanContent(message);
@@ -206,7 +249,6 @@ client.on('messageCreate', async (message) => {
   } catch (error) {
     console.error('Message handler error:', error);
 
-    // Avoid spamming users with stack traces/API details.
     if (message.guildId === config.guildId && !message.author.bot && message.content.length < 2000) {
       try {
         await message.channel.send('⚠️ I hit an error while thinking. Try again in a moment.');
