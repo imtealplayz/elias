@@ -25,8 +25,8 @@ export const config = {
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
   prefix: process.env.BOT_PREFIX || '!',
   botName: process.env.BOT_NAME || 'Elias',
-  spontaneousChance: Math.min(1, Math.max(0, Number(process.env.SPONTANEOUS_CHANCE || 0.04))),
-  semiCooldownMs: Math.max(0, Number(process.env.SEMI_COOLDOWN_SECONDS || 300) * 1000),
-  maxContextMessages: Math.max(4, Number(process.env.MAX_CONTEXT_MESSAGES || 18)),
+  spontaneousChance: Math.min(1, Math.max(0, Number(process.env.SPONTANEOUS_CHANCE || 0.02))),
+  semiCooldownMs: Math.max(0, Number(process.env.SEMI_COOLDOWN_SECONDS || 600) * 1000),
+  maxContextMessages: Math.max(4, Number(process.env.MAX_CONTEXT_MESSAGES || 12)),
   maxMemoriesPerUser: Math.max(1, Number(process.env.MAX_MEMORIES_PER_USER || 12))
 };
