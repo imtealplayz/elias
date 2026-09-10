@@ -7,4 +7,6 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-CMD ["npm", "start"]
+RUN node --version
+
+CMD ["sh", "-c", "node --version && npm start"]
