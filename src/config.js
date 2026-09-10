@@ -4,7 +4,7 @@ const required = [
   'DISCORD_TOKEN',
   'CLIENT_ID',
   'GUILD_ID',
-  'GROQ_API_KEY',
+  'GEMINI_API_KEY',
   'SUPABASE_URL',
   'SUPABASE_SECRET_KEY'
 ];
@@ -19,8 +19,9 @@ export const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
   guildId: process.env.GUILD_ID,
-  groqApiKey: process.env.GROQ_API_KEY,
-  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  geminiClassifierModel: process.env.GEMINI_CLASSIFIER_MODEL || 'gemini-2.5-flash-lite',
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
   prefix: process.env.BOT_PREFIX || '!',
