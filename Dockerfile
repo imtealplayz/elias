@@ -7,6 +7,6 @@ RUN npm install --omit=dev
 
 COPY . .
 
-RUN node --version
+RUN echo "Elias build source: v1.0.3" && node --version
 
-CMD ["sh", "-c", "node --version && npm start"]
+CMD ["sh", "-c", "echo 'Elias build source: v1.0.3' && node --version && npm start"]
