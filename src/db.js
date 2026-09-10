@@ -1,127 +1,114 @@
-import ws from 'ws';
-import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 
-// Supabase's current Realtime client expects a WebSocket implementation on
-// Node.js < 22. Installing `ws` is not enough in some ESM/runtime combinations,
-// so provide it globally before createClient() is called.
-if (!globalThis.WebSocket) {
-  globalThis.WebSocket = ws;
-}
+const baseUrl = `${config.supabaseUrl.replace(/\/$/, '')}/rest/v1`;
 
-export const supabase = createClient(config.supabaseUrl, config.supabaseSecretKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-    detectSessionInUrl: false
-  },
-  realtime: {
-    transport: ws
-  }
-});
+async function request(table, { method = 'GET', query = '', body, prefer } = {}) {
+  const response = await fetch(`${baseUrl}/${table}${query}`, {
+    method,
+    headers: {
+      apikey: config.supabaseSecretKey,
+      Authorization: `Bearer ${config.supabaseSecretKey}`,
+      'Content-Type': 'application/json',
+      ...(prefer ? { Prefer: prefer } : {})
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  });
 
-async function unwrap(promise, label) {
-  const { data, error } = await promise;
-  if (error) {
-    console.error(`[DB] ${label}:`, error.message);
-    throw error;
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
   }
+
+  if (!response.ok) {
+    const detail = typeof data === 'string' ? data : JSON.stringify(data);
+    throw new Error(`Supabase ${method} ${table} failed (${response.status}): ${detail}`);
+  }
+
   return data;
 }
 
-export async function getChannelMode(guildId, channelId) {
-  const row = await unwrap(
-    supabase
-      .from('channels')
-      .select('mode')
-      .eq('guild_id', guildId)
-      .eq('channel_id', channelId)
-      .maybeSingle(),
-    'getChannelMode'
-  );
+function encode(value) {
+  return encodeURIComponent(value);
+}
 
-  return row?.mode || null;
+export async function getChannelMode(guildId, channelId) {
+  const rows = await request('channels', {
+    query: `?select=mode&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&limit=1`
+  });
+
+  return rows?.[0]?.mode || null;
+}
+
+export async function listChannelModes(guildId) {
+  return request('channels', {
+    query: `?select=channel_id,mode&guild_id=eq.${encode(guildId)}&order=mode.asc`
+  });
 }
 
 export async function setChannelMode(guildId, channelId, mode) {
-  return unwrap(
-    supabase
-      .from('channels')
-      .upsert({
-        guild_id: guildId,
-        channel_id: channelId,
-        mode,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'channel_id' }),
-    'setChannelMode'
-  );
+  return request('channels', {
+    method: 'POST',
+    query: '?on_conflict=channel_id',
+    body: [{
+      guild_id: guildId,
+      channel_id: channelId,
+      mode,
+      updated_at: new Date().toISOString()
+    }],
+    prefer: 'resolution=merge-duplicates,return=minimal'
+  });
 }
 
 export async function removeChannelMode(guildId, channelId) {
-  return unwrap(
-    supabase
-      .from('channels')
-      .delete()
-      .eq('guild_id', guildId)
-      .eq('channel_id', channelId),
-    'removeChannelMode'
-  );
+  return request('channels', {
+    method: 'DELETE',
+    query: `?guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}`
+  });
 }
 
 export async function upsertUser(user) {
-  return unwrap(
-    supabase
-      .from('users')
-      .upsert({
-        discord_id: user.id,
-        username: user.username,
-        display_name: user.displayName || user.username,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'discord_id' }),
-    'upsertUser'
-  );
+  return request('users', {
+    method: 'POST',
+    query: '?on_conflict=discord_id',
+    body: [{
+      discord_id: user.id,
+      username: user.username,
+      display_name: user.displayName || user.username,
+      updated_at: new Date().toISOString()
+    }],
+    prefer: 'resolution=merge-duplicates,return=minimal'
+  });
 }
 
 export async function saveMessage({ guildId, channelId, userId, username, content }) {
-  return unwrap(
-    supabase.from('messages').insert({
+  return request('messages', {
+    method: 'POST',
+    body: [{
       guild_id: guildId,
       channel_id: channelId,
       discord_id: userId,
       username,
       content
-    }),
-    'saveMessage'
-  );
+    }],
+    prefer: 'return=minimal'
+  });
 }
 
 export async function getRecentMessages(guildId, channelId, limit) {
-  const rows = await unwrap(
-    supabase
-      .from('messages')
-      .select('discord_id, username, content, created_at')
-      .eq('guild_id', guildId)
-      .eq('channel_id', channelId)
-      .order('created_at', { ascending: false })
-      .limit(limit),
-    'getRecentMessages'
-  );
+  const rows = await request('messages', {
+    query: `?select=discord_id,username,content,created_at&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&order=created_at.desc&limit=${Math.max(1, Number(limit) || 18)}`
+  });
 
-  return rows.reverse();
+  return (rows || []).reverse();
 }
 
 export async function getUserMemories(guildId, discordId, limit) {
-  return unwrap(
-    supabase
-      .from('memories')
-      .select('id, memory, importance, created_at')
-      .eq('guild_id', guildId)
-      .eq('discord_id', discordId)
-      .order('importance', { ascending: false })
-      .order('updated_at', { ascending: false })
-      .limit(limit),
-    'getUserMemories'
-  );
+  return request('memories', {
+    query: `?select=id,memory,importance,created_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&order=importance.desc,updated_at.desc&limit=${Math.max(1, Number(limit) || 12)}`
+  });
 }
 
 export async function saveMemories(guildId, discordId, memories) {
@@ -137,5 +124,16 @@ export async function saveMemories(guildId, discordId, memories) {
     }));
 
   if (!rows.length) return;
-  return unwrap(supabase.from('memories').insert(rows), 'saveMemories');
+  return request('memories', {
+    method: 'POST',
+    body: rows,
+    prefer: 'return=minimal'
+  });
+}
+
+export async function deleteUserMemories(guildId, discordId) {
+  return request('memories', {
+    method: 'DELETE',
+    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}`
+  });
 }
