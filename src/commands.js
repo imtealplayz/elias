@@ -17,19 +17,23 @@ function isAdmin(message) {
     message.member?.permissions.has(PermissionFlagsBits.Administrator);
 }
 
+function code(text) {
+  return '`' + text + '`';
+}
+
 function helpText() {
   return [
     '**Elias commands**',
-    `\\${config.prefix}main [#channel]\\` — make a channel MAIN`,
-    `\\${config.prefix}unmain [#channel]\\` — remove MAIN mode`,
-    `\\${config.prefix}semi [#channel]\\` — make a channel SEMI-ACTIVE`,
-    `\\${config.prefix}unsemi [#channel]\\` — remove SEMI-ACTIVE mode`,
-    `\\${config.prefix}block [#channel]\\` — make a channel completely silent`,
-    `\\${config.prefix}unblock [#channel]\\` — remove BLOCKED mode`,
-    `\\${config.prefix}channels\\` — show configured channels`,
-    `\\${config.prefix}memory\\` — DM your stored memories`,
-    `\\${config.prefix}forget\\` — delete all of your stored memories`,
-    `\\${config.prefix}help\\` — show this help`
+    `${code(`${config.prefix}main [#channel]`)} — make a channel MAIN`,
+    `${code(`${config.prefix}unmain [#channel]`)} — remove MAIN mode`,
+    `${code(`${config.prefix}semi [#channel]`)} — make a channel SEMI-ACTIVE`,
+    `${code(`${config.prefix}unsemi [#channel]`)} — remove SEMI-ACTIVE mode`,
+    `${code(`${config.prefix}block [#channel]`)} — make a channel completely silent`,
+    `${code(`${config.prefix}unblock [#channel]`)} — remove BLOCKED mode`,
+    `${code(`${config.prefix}channels`)} — show configured channels`,
+    `${code(`${config.prefix}memory`)} — DM your stored memories`,
+    `${code(`${config.prefix}forget`)} — delete all of your stored memories`,
+    `${code(`${config.prefix}help`)} — show this help`
   ].join('\n');
 }
 
