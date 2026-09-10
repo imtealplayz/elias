@@ -84,9 +84,9 @@ OUTPUT FORMAT
 - Return ONLY one valid JSON object.
 - Do not use markdown fences.
 - For normal replies use exactly this shape: {"reply":"...","memories":[{"memory":"...","importance":0.5}]}
-- `reply` must be a string.
-- `memories` must be an array. Use [] when there is nothing durable worth saving.
-- Each memory must contain a string `memory` and numeric `importance` between 0 and 1.`;
+- reply must be a string.
+- memories must be an array. Use [] when there is nothing durable worth saving.
+- Each memory must contain a string memory and numeric importance between 0 and 1.`;
 
 function normalizeHistory(history) {
   return history.map((message) => ({
