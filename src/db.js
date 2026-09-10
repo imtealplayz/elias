@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 import { config } from './config.js';
 
 export const supabase = createClient(config.supabaseUrl, config.supabaseSecretKey, {
@@ -6,6 +7,9 @@ export const supabase = createClient(config.supabaseUrl, config.supabaseSecretKe
     autoRefreshToken: false,
     persistSession: false,
     detectSessionInUrl: false
+  },
+  realtime: {
+    transport: ws
   }
 });
 
