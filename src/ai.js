@@ -78,7 +78,15 @@ MEMORY
 - Explicit durable facts the user directly tells you should be remembered whenever appropriate.
 - Especially remember direct statements about what the user wants to be called, their stable preferences, projects, hobbies, and other useful long-term facts.
 - Do not store passwords, tokens, payment information, highly sensitive personal data, or transient remarks.
-- Do not manufacture memories from guesses, jokes, questions, or temporary statements.`;
+- Do not manufacture memories from guesses, jokes, questions, or temporary statements.
+
+OUTPUT FORMAT
+- Return ONLY one valid JSON object.
+- Do not use markdown fences.
+- For normal replies use exactly this shape: {"reply":"...","memories":[{"memory":"...","importance":0.5}]}
+- `reply` must be a string.
+- `memories` must be an array. Use [] when there is nothing durable worth saving.
+- Each memory must contain a string `memory` and numeric `importance` between 0 and 1.`;
 
 function normalizeHistory(history) {
   return history.map((message) => ({
@@ -101,36 +109,6 @@ function parseJson(text) {
   }
 }
 
-const replySchema = {
-  type: 'object',
-  properties: {
-    reply: { type: 'string' },
-    memories: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          memory: { type: 'string' },
-          importance: { type: 'number' }
-        },
-        required: ['memory', 'importance'],
-        additionalProperties: false
-      }
-    }
-  },
-  required: ['reply', 'memories'],
-  additionalProperties: false
-};
-
-const spontaneousSchema = {
-  type: 'object',
-  properties: {
-    shouldReply: { type: 'boolean' }
-  },
-  required: ['shouldReply'],
-  additionalProperties: false
-};
-
 export async function generateReply({ user, content, history, memories, mode }) {
   const memoryText = memories.length
     ? memories.map((m) => `- ${m.memory}`).join('\n')
@@ -141,7 +119,7 @@ export async function generateReply({ user, content, history, memories, mode }) 
     ...normalizeHistory(history),
     {
       role: 'user',
-      content: `Current message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\nReply naturally and keep the Discord reply reasonably short. Explicit durable facts stated by the user should be considered for memory storage. Use an empty memories array when there is nothing worth remembering.`
+      content: `Current message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\nReply naturally and keep the Discord reply reasonably short. Explicit durable facts stated by the user should be considered for memory storage. Return ONLY the required JSON object.`
     }
   ];
 
@@ -153,24 +131,19 @@ export async function generateReply({ user, content, history, memories, mode }) 
     reasoning_effort: 'low',
     include_reasoning: false,
     response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'elias_reply',
-        strict: true,
-        schema: replySchema
-      }
+      type: 'json_object'
     }
   });
 
   const raw = completion.choices?.[0]?.message?.content || '';
   const parsed = parseJson(raw);
 
-  if (!parsed?.reply) {
+  if (!parsed || typeof parsed.reply !== 'string') {
     throw new Error('AI returned an invalid reply payload.');
   }
 
   return {
-    reply: String(parsed.reply).trim(),
+    reply: parsed.reply.trim(),
     memories: Array.isArray(parsed.memories) ? parsed.memories : []
   };
 }
@@ -183,7 +156,7 @@ export async function decideSpontaneousReply({ user, content, history }) {
       ...normalizeHistory(history),
       {
         role: 'user',
-        content: `Decide whether ${config.botName} should spontaneously join this Discord conversation.\n\nLatest message from ${user.username}: ${content}\n\nReturn true only when an interruption would feel relevant and natural. Return false when it would be annoying, irrelevant, repetitive, or forced.`
+        content: `Decide whether ${config.botName} should spontaneously join this Discord conversation.\n\nLatest message from ${user.username}: ${content}\n\nReturn ONLY this JSON object and nothing else: {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural. Return false when it would be annoying, irrelevant, repetitive, or forced.`
       }
     ],
     temperature: 0.3,
@@ -191,12 +164,7 @@ export async function decideSpontaneousReply({ user, content, history }) {
     reasoning_effort: 'low',
     include_reasoning: false,
     response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'elias_spontaneous_decision',
-        strict: true,
-        schema: spontaneousSchema
-      }
+      type: 'json_object'
     }
   });
 
