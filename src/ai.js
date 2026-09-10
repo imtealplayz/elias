@@ -1,15 +1,19 @@
-import Groq from 'groq-sdk';
+import { GoogleGenAI } from '@google/genai';
 import { config } from './config.js';
 
-const groq = new Groq({ apiKey: config.groqApiKey });
+const gemini = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
-export function isGroqRateLimitError(error) {
-  return error?.status === 429 || error?.code === 'rate_limit_exceeded' || error?.error?.code === 'rate_limit_exceeded';
+export function isGeminiRateLimitError(error) {
+  return error?.status === 429 || error?.code === 429 || error?.code === 'RESOURCE_EXHAUSTED' || /resource exhausted|rate limit|quota/i.test(error?.message || '');
 }
 
-export function getGroqRetryAfterMs(error) {
-  const seconds = Number(error?.headers?.['retry-after']);
-  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+export function getGeminiRetryAfterMs(error) {
+  const headerSeconds = Number(error?.headers?.['retry-after'] || error?.headers?.['Retry-After']);
+  if (Number.isFinite(headerSeconds) && headerSeconds > 0) return headerSeconds * 1000;
+
+  const match = String(error?.message || '').match(/retry(?:ing)?\s*(?:after|in)?\s*([0-9]+(?:\.[0-9]+)?)\s*s/i);
+  if (match) return Math.ceil(Number(match[1]) * 1000);
+
   return 60 * 1000;
 }
 
@@ -136,8 +140,8 @@ OUTPUT FORMAT
 
 function normalizeHistory(history) {
   return history.map((message) => ({
-    role: message.is_bot ? 'assistant' : 'user',
-    content: `${message.username}: ${message.content}`
+    role: message.is_bot ? 'model' : 'user',
+    parts: [{ text: `${message.username}: ${message.content}` }]
   }));
 }
 
@@ -177,32 +181,43 @@ async function getLiveWebContext(content) {
   if (!needsLiveSearch(content)) return '';
 
   try {
-    const response = await groq.chat.completions.create({
-      model: config.groqModel,
-      messages: [
-        {
-          role: 'system',
-          content: `Search the web for current information needed to answer the user's request. The current time in IST is ${getCurrentIST()}. Give a concise factual research brief for another assistant. Include the relevant dates and distinguish confirmed facts from uncertainty. Do not answer conversationally.`
-        },
-        { role: 'user', content }
-      ],
-      temperature: 0.2,
-      max_completion_tokens: 600,
-      reasoning_effort: 'low',
-      include_reasoning: false,
-      tool_choice: 'required',
-      tools: [
-        { type: 'browser_search' }
-      ]
+    const response = await gemini.models.generateContent({
+      model: config.geminiModel,
+      contents: content,
+      config: {
+        systemInstruction: `Search the web for current information needed to answer the user's request. The current time in IST is ${getCurrentIST()}. Give a concise factual research brief for another assistant. Include relevant dates and distinguish confirmed facts from uncertainty. Do not answer conversationally.`,
+        tools: [{ googleSearch: {} }],
+        temperature: 0.2,
+        maxOutputTokens: 600
+      }
     });
 
-    return response.choices?.[0]?.message?.content?.trim() || '';
+    return response.text?.trim() || '';
   } catch (error) {
-    if (isGroqRateLimitError(error)) throw error;
+    if (isGeminiRateLimitError(error)) throw error;
     console.error('Live web search failed; continuing without live context:', error);
     return '';
   }
 }
+
+const REPLY_SCHEMA = {
+  type: 'object',
+  properties: {
+    reply: { type: 'string' },
+    memories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          memory: { type: 'string' },
+          importance: { type: 'number' }
+        },
+        required: ['memory', 'importance']
+      }
+    }
+  },
+  required: ['reply', 'memories']
+};
 
 export async function generateReply({ user, content, history, memories, mode }) {
   const memoryText = memories.length
@@ -212,28 +227,29 @@ export async function generateReply({ user, content, history, memories, mode }) 
   const currentIST = getCurrentIST();
   const liveContext = await getLiveWebContext(content);
 
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+  const contents = [
     ...normalizeHistory(history),
     {
       role: 'user',
-      content: `Current date/time in IST: ${currentIST}\n\nCurrent message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\n${liveContext ? `LIVE WEB CONTEXT:\n${liveContext}\n\n` : ''}Reply naturally and keep the Discord reply reasonably short. Use the live web context when it is relevant. Explicit durable facts stated by the user should be considered for memory storage. Return ONLY the required JSON object.`
+      parts: [{
+        text: `Current date/time in IST: ${currentIST}\n\nCurrent message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\n${liveContext ? `LIVE WEB CONTEXT:\n${liveContext}\n\n` : ''}Reply naturally and keep the Discord reply reasonably short. Use the live web context when it is relevant. Explicit durable facts stated by the user should be considered for memory storage. Return ONLY the required JSON object.`
+      }]
     }
   ];
 
-  const completion = await groq.chat.completions.create({
-    model: config.groqModel,
-    messages,
-    temperature: 0.85,
-    max_completion_tokens: 800,
-    reasoning_effort: 'low',
-    include_reasoning: false,
-    response_format: {
-      type: 'json_object'
+  const response = await gemini.models.generateContent({
+    model: config.geminiModel,
+    contents,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      temperature: 0.85,
+      maxOutputTokens: 800,
+      responseMimeType: 'application/json',
+      responseSchema: REPLY_SCHEMA
     }
   });
 
-  const raw = completion.choices?.[0]?.message?.content || '';
+  const raw = response.text || '';
   const parsed = parseJson(raw);
 
   if (!parsed || typeof parsed.reply !== 'string') {
@@ -247,25 +263,30 @@ export async function generateReply({ user, content, history, memories, mode }) 
 }
 
 export async function decideSpontaneousReply({ user, content, history }) {
-  const completion = await groq.chat.completions.create({
-    model: config.groqModel,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+  const response = await gemini.models.generateContent({
+    model: config.geminiClassifierModel,
+    contents: [
       ...normalizeHistory(history),
       {
         role: 'user',
-        content: `Current date/time in IST: ${getCurrentIST()}\n\nDecide whether ${config.botName} should spontaneously join this Discord conversation.\n\nLatest message from ${user.username}: ${content}\n\nReturn ONLY this JSON object and nothing else: {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural. Return false when it would be annoying, irrelevant, repetitive, or forced.`
+        parts: [{
+          text: `Current date/time in IST: ${getCurrentIST()}\n\nDecide whether ${config.botName} should spontaneously join this Discord conversation.\n\nLatest message from ${user.username}: ${content}\n\nReturn ONLY this JSON object and nothing else: {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural. Return false when it would be annoying, irrelevant, repetitive, or forced.`
+        }]
       }
     ],
-    temperature: 0.3,
-    max_completion_tokens: 180,
-    reasoning_effort: 'low',
-    include_reasoning: false,
-    response_format: {
-      type: 'json_object'
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      temperature: 0.3,
+      maxOutputTokens: 180,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'object',
+        properties: { shouldReply: { type: 'boolean' } },
+        required: ['shouldReply']
+      }
     }
   });
 
-  const parsed = parseJson(completion.choices?.[0]?.message?.content || '');
+  const parsed = parseJson(response.text || '');
   return parsed?.shouldReply === true;
 }
