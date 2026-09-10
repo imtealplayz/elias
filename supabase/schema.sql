@@ -36,8 +36,13 @@ create table if not exists public.messages (
   discord_id text not null,
   username text not null,
   content text not null,
+  is_bot boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- Safe migration for an existing Elias database.
+alter table public.messages
+  add column if not exists is_bot boolean not null default false;
 
 create index if not exists messages_channel_idx on public.messages(guild_id, channel_id, created_at desc);
 
