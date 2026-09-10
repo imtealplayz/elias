@@ -3,6 +3,16 @@ import { config } from './config.js';
 
 const groq = new Groq({ apiKey: config.groqApiKey });
 
+export function isGroqRateLimitError(error) {
+  return error?.status === 429 || error?.code === 'rate_limit_exceeded' || error?.error?.code === 'rate_limit_exceeded';
+}
+
+export function getGroqRetryAfterMs(error) {
+  const seconds = Number(error?.headers?.['retry-after']);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+  return 60 * 1000;
+}
+
 const SYSTEM_PROMPT = `You are ${config.botName}, an 18-year-old female Discord server character. You use she/her pronouns.
 
 GENDER AND IDENTITY
@@ -166,7 +176,7 @@ async function getLiveWebContext(content) {
         { role: 'user', content }
       ],
       temperature: 0.2,
-      max_completion_tokens: 900,
+      max_completion_tokens: 600,
       reasoning_effort: 'low',
       include_reasoning: false,
       tool_choice: 'required',
@@ -177,6 +187,7 @@ async function getLiveWebContext(content) {
 
     return response.choices?.[0]?.message?.content?.trim() || '';
   } catch (error) {
+    if (isGroqRateLimitError(error)) throw error;
     console.error('Live web search failed; continuing without live context:', error);
     return '';
   }
@@ -203,7 +214,7 @@ export async function generateReply({ user, content, history, memories, mode }) 
     model: config.groqModel,
     messages,
     temperature: 0.85,
-    max_completion_tokens: 1200,
+    max_completion_tokens: 800,
     reasoning_effort: 'low',
     include_reasoning: false,
     response_format: {
@@ -236,7 +247,7 @@ export async function decideSpontaneousReply({ user, content, history }) {
       }
     ],
     temperature: 0.3,
-    max_completion_tokens: 300,
+    max_completion_tokens: 180,
     reasoning_effort: 'low',
     include_reasoning: false,
     response_format: {
