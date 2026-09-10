@@ -8,7 +8,7 @@ import {
   saveMessage,
   upsertUser
 } from './db.js';
-import { decideSpontaneousReply, generateReply } from './ai.js';
+import { decideSpontaneousReply, generateReply, getGroqRetryAfterMs, isGroqRateLimitError } from './ai.js';
 import { handleCommand } from './commands.js';
 
 const client = new Client({
@@ -23,6 +23,8 @@ const client = new Client({
 const spontaneousCooldowns = new Map();
 const channelQueues = new Map();
 const processedMessageIds = new Set();
+let groqRateLimitedUntil = 0;
+const rateLimitNotices = new Map();
 
 function queueForChannel(channelId, task) {
   const previous = channelQueues.get(channelId) || Promise.resolve();
@@ -45,6 +47,25 @@ function markMessageProcessed(messageId) {
   processedMessageIds.add(messageId);
   setTimeout(() => processedMessageIds.delete(messageId), 10 * 60 * 1000).unref?.();
   return true;
+}
+
+function isAiTemporarilyUnavailable() {
+  return Date.now() < groqRateLimitedUntil;
+}
+
+function markAiRateLimited(error) {
+  groqRateLimitedUntil = Math.max(groqRateLimitedUntil, Date.now() + getGroqRetryAfterMs(error));
+  console.warn(`Groq rate-limited until ${new Date(groqRateLimitedUntil).toISOString()}`);
+}
+
+async function sendRateLimitNotice(message) {
+  const now = Date.now();
+  const lastNotice = rateLimitNotices.get(message.channelId) || 0;
+  if (now - lastNotice < 10 * 60 * 1000) return;
+
+  rateLimitNotices.set(message.channelId, now);
+  const waitSeconds = Math.max(1, Math.ceil((groqRateLimitedUntil - now) / 1000));
+  await message.channel.send(`⏳ I'm temporarily rate-limited by the AI service. Try me again in about ${waitSeconds}s.`);
 }
 
 function cleanContent(message) {
@@ -135,6 +156,11 @@ async function respondToMessage(message, mode) {
   const content = cleanContent(message);
   if (!content) return;
 
+  if (isAiTemporarilyUnavailable()) {
+    await sendRateLimitNotice(message);
+    return;
+  }
+
   const [history, memories] = await Promise.all([
     getRecentMessages(config.guildId, message.channelId, config.maxContextMessages),
     getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
@@ -150,37 +176,48 @@ async function respondToMessage(message, mode) {
     isBot: false
   });
 
-  const result = await generateReply({
-    user: {
-      username: message.member?.displayName || message.author.username,
-      id: message.author.id
-    },
-    content,
-    history,
-    memories,
-    mode
-  });
+  try {
+    const result = await generateReply({
+      user: {
+        username: message.member?.displayName || message.author.username,
+        id: message.author.id
+      },
+      content,
+      history,
+      memories,
+      mode
+    });
 
-  await sendLongReply(message, result.reply);
+    await sendLongReply(message, result.reply);
 
-  await saveMessage({
-    guildId: message.guildId,
-    channelId: message.channelId,
-    userId: client.user.id,
-    username: client.user.username,
-    content: result.reply,
-    isBot: true
-  });
+    await saveMessage({
+      guildId: message.guildId,
+      channelId: message.channelId,
+      userId: client.user.id,
+      username: client.user.username,
+      content: result.reply,
+      isBot: true
+    });
 
-  const explicitMemories = extractExplicitMemories(content);
-  const allMemories = mergeMemories(explicitMemories, result.memories);
+    const explicitMemories = extractExplicitMemories(content);
+    const allMemories = mergeMemories(explicitMemories, result.memories);
 
-  if (allMemories.length) {
-    await saveMemories(config.guildId, message.author.id, allMemories);
+    if (allMemories.length) {
+      await saveMemories(config.guildId, message.author.id, allMemories);
+    }
+  } catch (error) {
+    if (isGroqRateLimitError(error)) {
+      markAiRateLimited(error);
+      await sendRateLimitNotice(message);
+      return;
+    }
+    throw error;
   }
 }
 
 async function handleSemiMessage(message, content) {
+  if (isAiTemporarilyUnavailable()) return;
+
   const repliedToElias = await isReplyToElias(message);
   const directlyAddressed =
     message.mentions.has(client.user.id) ||
@@ -199,19 +236,28 @@ async function handleSemiMessage(message, content) {
   if (Math.random() > config.spontaneousChance) return;
 
   const history = await getRecentMessages(config.guildId, message.channelId, config.maxContextMessages);
-  const shouldReply = await decideSpontaneousReply({
-    user: {
-      username: message.member?.displayName || message.author.username,
-      id: message.author.id
-    },
-    content,
-    history
-  });
 
-  if (!shouldReply) return;
+  try {
+    const shouldReply = await decideSpontaneousReply({
+      user: {
+        username: message.member?.displayName || message.author.username,
+        id: message.author.id
+      },
+      content,
+      history
+    });
 
-  spontaneousCooldowns.set(message.channelId, now);
-  await respondToMessage(message, 'semi');
+    if (!shouldReply) return;
+
+    spontaneousCooldowns.set(message.channelId, now);
+    await respondToMessage(message, 'semi');
+  } catch (error) {
+    if (isGroqRateLimitError(error)) {
+      markAiRateLimited(error);
+      return;
+    }
+    throw error;
+  }
 }
 
 client.once('ready', () => {
@@ -250,6 +296,16 @@ client.on('messageCreate', async (message) => {
     console.error('Message handler error:', error);
 
     if (message.guildId === config.guildId && !message.author.bot && message.content.length < 2000) {
+      if (isGroqRateLimitError(error)) {
+        markAiRateLimited(error);
+        try {
+          await sendRateLimitNotice(message);
+        } catch {
+          // Ignore secondary Discord errors.
+        }
+        return;
+      }
+
       try {
         await message.channel.send('⚠️ I hit an error while thinking. Try again in a moment.');
       } catch {
