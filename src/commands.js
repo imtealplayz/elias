@@ -1,6 +1,12 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
-import { getChannelMode, removeChannelMode, setChannelMode, getUserMemories, supabase } from './db.js';
+import {
+  getChannelMode,
+  removeChannelMode,
+  setChannelMode,
+  getUserMemories,
+  supabase
+} from './db.js';
 
 function targetChannel(message) {
   return message.mentions.channels.first() || message.channel;
@@ -14,18 +20,27 @@ function isAdmin(message) {
 function helpText() {
   return [
     '**Elias commands**',
-    `\`${config.prefix}main [#channel]\` — make a channel MAIN`,
-    `\`${config.prefix}unmain [#channel]\` — remove MAIN mode`,
-    `\`${config.prefix}semi [#channel]\` — make a channel SEMI-ACTIVE`,
-    `\`${config.prefix}unsemi [#channel]\` — remove SEMI-ACTIVE mode`,
-    `\`${config.prefix}block [#channel]\` — make a channel completely silent`,
-    `\`${config.prefix}unblock [#channel]\` — remove BLOCKED mode`,
-    `\`${config.prefix}channels\` — show configured channels`,
-    `\`${config.prefix}memory\` — show your stored memories`,
-    `\`${config.prefix}forget\` — delete all of your stored memories`,
-    `\`${config.prefix}help\` — show this help`
+    `\\${config.prefix}main [#channel]\\` — make a channel MAIN`,
+    `\\${config.prefix}unmain [#channel]\\` — remove MAIN mode`,
+    `\\${config.prefix}semi [#channel]\\` — make a channel SEMI-ACTIVE`,
+    `\\${config.prefix}unsemi [#channel]\\` — remove SEMI-ACTIVE mode`,
+    `\\${config.prefix}block [#channel]\\` — make a channel completely silent`,
+    `\\${config.prefix}unblock [#channel]\\` — remove BLOCKED mode`,
+    `\\${config.prefix}channels\\` — show configured channels`,
+    `\\${config.prefix}memory\\` — DM your stored memories`,
+    `\\${config.prefix}forget\\` — delete all of your stored memories`,
+    `\\${config.prefix}help\\` — show this help`
   ].join('\n');
 }
+
+const commandModes = {
+  main: 'main',
+  unmain: 'main',
+  semi: 'semi',
+  unsemi: 'semi',
+  block: 'blocked',
+  unblock: 'blocked'
+};
 
 export async function handleCommand(message) {
   const body = message.content.slice(config.prefix.length).trim();
@@ -34,45 +49,44 @@ export async function handleCommand(message) {
 
   if (!name) return true;
 
-  if (['main', 'unmain', 'semi', 'unsemi', 'block', 'unblock'].includes(name)) {
+  if (Object.hasOwn(commandModes, name)) {
     if (!isAdmin(message)) {
       await message.reply('You need **Manage Server** permission to change Elias channel modes.');
       return true;
     }
 
     const channel = targetChannel(message);
+    const mode = commandModes[name];
+    const isRemoval = name.startsWith('un');
 
-    if (name === 'main') {
-      await setChannelMode(config.guildId, channel.id, 'main');
-      await message.reply(`✅ ${channel} is now a **MAIN** Elias channel.`);
-      return true;
-    }
-
-    if (name === 'semi') {
-      await setChannelMode(config.guildId, channel.id, 'semi');
-      await message.reply(`✅ ${channel} is now a **SEMI-ACTIVE** Elias channel.`);
-      return true;
-    }
-
-    if (name === 'block') {
-      await setChannelMode(config.guildId, channel.id, 'blocked');
-      await message.reply(`🔒 ${channel} is now **BLOCKED**. Elias will not talk there.`);
-      return true;
-    }
-
-    if (name === 'unmain' || name === 'unsemi' || name === 'unblock') {
+    if (isRemoval) {
       const current = await getChannelMode(config.guildId, channel.id);
-      const expected = name.slice(3);
-      const expectedMode = expected === 'main' ? 'main' : expected === 'semi' ? 'semi' : 'blocked';
 
-      if (current === expectedMode) {
+      if (current === mode) {
         await removeChannelMode(config.guildId, channel.id);
-        await message.reply(`✅ Removed **${expectedMode.toUpperCase()}** mode from ${channel}. Elias will stay silent there until another mode is set.`);
+        await message.reply(`✅ Removed **${mode.toUpperCase()}** mode from ${channel}. Elias will stay silent there until another mode is set.`);
       } else {
-        await message.reply(`That channel is not currently **${expectedMode.toUpperCase()}**.`);
+        await message.reply(`That channel is not currently **${mode.toUpperCase()}**.`);
       }
       return true;
     }
+
+    await setChannelMode(config.guildId, channel.id, mode);
+
+    const labels = {
+      main: 'MAIN',
+      semi: 'SEMI-ACTIVE',
+      blocked: 'BLOCKED'
+    };
+
+    const descriptions = {
+      main: 'Elias will actively reply to messages there.',
+      semi: 'Elias will reply when addressed and occasionally jump into conversation.',
+      blocked: 'Elias will never respond to normal messages there.'
+    };
+
+    await message.reply(`✅ ${channel} is now **${labels[mode]}**. ${descriptions[mode]}`);
+    return true;
   }
 
   if (name === 'channels') {
@@ -101,14 +115,16 @@ export async function handleCommand(message) {
 
   if (name === 'memory') {
     const memories = await getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser);
+    const text = memories.length
+      ? memories.map((memory, index) => `${index + 1}. ${memory.memory}`).join('\n')
+      : 'I don\'t have any saved memories about you yet.';
 
-    if (!memories.length) {
-      await message.reply('I don\'t have any saved memories about you yet.');
-      return true;
+    try {
+      await message.author.send(`**What ${config.botName} remembers about you:**\n${text}`);
+      await message.react('📬');
+    } catch {
+      await message.reply('I couldn\'t DM you. Please enable DMs from server members and try again.');
     }
-
-    const lines = memories.map((memory, index) => `${index + 1}. ${memory.memory}`);
-    await message.reply(`**What I remember about you:**\n${lines.join('\n')}`);
     return true;
   }
 
