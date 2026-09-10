@@ -71,19 +71,22 @@ async function respondToMessage(message, mode) {
   const content = cleanContent(message);
   if (!content) return;
 
+  // Fetch previous conversation context before inserting the current user message,
+  // so the current message is not duplicated in the model input.
+  const [history, memories] = await Promise.all([
+    getRecentMessages(config.guildId, message.channelId, config.maxContextMessages),
+    getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
+  ]);
+
   await upsertUser(message.author);
   await saveMessage({
     guildId: message.guildId,
     channelId: message.channelId,
     userId: message.author.id,
     username: message.member?.displayName || message.author.username,
-    content
+    content,
+    isBot: false
   });
-
-  const [history, memories] = await Promise.all([
-    getRecentMessages(config.guildId, message.channelId, config.maxContextMessages),
-    getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
-  ]);
 
   const result = await generateReply({
     user: {
@@ -97,6 +100,16 @@ async function respondToMessage(message, mode) {
   });
 
   await sendLongReply(message, result.reply);
+
+  // Persist Elias's own response so future turns know exactly what she said.
+  await saveMessage({
+    guildId: message.guildId,
+    channelId: message.channelId,
+    userId: client.user.id,
+    username: client.user.username,
+    content: result.reply,
+    isBot: true
+  });
 
   if (result.memories.length) {
     await saveMemories(config.guildId, message.author.id, result.memories);
