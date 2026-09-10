@@ -1,12 +1,12 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
 import {
-  deleteUserMemories,
   getChannelMode,
   listChannelModes,
   removeChannelMode,
   setChannelMode,
-  getUserMemories
+  getUserMemories,
+  deleteUserMemories
 } from './db.js';
 
 function targetChannel(message) {
@@ -100,14 +100,14 @@ export async function handleCommand(message) {
       return true;
     }
 
-    const data = await listChannelModes(config.guildId);
+    const rows = await listChannelModes(config.guildId);
 
-    if (!data?.length) {
+    if (!rows?.length) {
       await message.reply('No Elias channels are configured yet.');
       return true;
     }
 
-    const lines = data.map((row) => `<#${row.channel_id}> → **${row.mode.toUpperCase()}**`);
+    const lines = rows.map((row) => `<#${row.channel_id}> → **${row.mode.toUpperCase()}**`);
     await message.reply(lines.join('\n'));
     return true;
   }
