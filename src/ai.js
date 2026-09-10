@@ -75,13 +75,14 @@ CONVERSATION BEHAVIOR
 MEMORY
 - You may be given memories about the user speaking to you.
 - Use them only when relevant.
-- Never reveal private or sensitive memory details unless the user clearly brought them up.
-- You may identify durable, useful facts in the current message for storage.
-- Do not store passwords, tokens, payment information, highly sensitive personal data, or transient remarks.`;
+- Explicit durable facts the user directly tells you should be remembered whenever appropriate.
+- Especially remember direct statements about what the user wants to be called, their stable preferences, projects, hobbies, and other useful long-term facts.
+- Do not store passwords, tokens, payment information, highly sensitive personal data, or transient remarks.
+- Do not manufacture memories from guesses, jokes, questions, or temporary statements.`;
 
 function normalizeHistory(history) {
   return history.map((message) => ({
-    role: 'user',
+    role: message.is_bot ? 'assistant' : 'user',
     content: `${message.username}: ${message.content}`
   }));
 }
@@ -140,7 +141,7 @@ export async function generateReply({ user, content, history, memories, mode }) 
     ...normalizeHistory(history),
     {
       role: 'user',
-      content: `Current message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\nReply naturally and keep the Discord reply reasonably short. Identify only durable, useful facts worth remembering. Use an empty memories array when there is nothing worth remembering.`
+      content: `Current message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\nReply naturally and keep the Discord reply reasonably short. Explicit durable facts stated by the user should be considered for memory storage. Use an empty memories array when there is nothing worth remembering.`
     }
   ];
 
