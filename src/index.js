@@ -8,7 +8,7 @@ import {
   saveMessage,
   upsertUser
 } from './db.js';
-import { decideSpontaneousReply, generateReply, getGroqRetryAfterMs, isGroqRateLimitError } from './ai.js';
+import { decideSpontaneousReply, generateReply, getGeminiRetryAfterMs, isGeminiRateLimitError } from './ai.js';
 import { summarizeMessages } from './summarize.js';
 import { handleCommand } from './commands.js';
 
@@ -24,7 +24,7 @@ const client = new Client({
 const spontaneousCooldowns = new Map();
 const channelQueues = new Map();
 const processedMessageIds = new Set();
-let groqRateLimitedUntil = 0;
+let aiRateLimitedUntil = 0;
 const rateLimitNotices = new Map();
 
 function queueForChannel(channelId, task) {
@@ -51,12 +51,12 @@ function markMessageProcessed(messageId) {
 }
 
 function isAiTemporarilyUnavailable() {
-  return Date.now() < groqRateLimitedUntil;
+  return Date.now() < aiRateLimitedUntil;
 }
 
 function markAiRateLimited(error) {
-  groqRateLimitedUntil = Math.max(groqRateLimitedUntil, Date.now() + getGroqRetryAfterMs(error));
-  console.warn(`Groq rate-limited until ${new Date(groqRateLimitedUntil).toISOString()}`);
+  aiRateLimitedUntil = Math.max(aiRateLimitedUntil, Date.now() + getGeminiRetryAfterMs(error));
+  console.warn(`Gemini rate-limited until ${new Date(aiRateLimitedUntil).toISOString()}`);
 }
 
 async function sendRateLimitNotice(message) {
@@ -65,7 +65,7 @@ async function sendRateLimitNotice(message) {
   if (now - lastNotice < 10 * 60 * 1000) return;
 
   rateLimitNotices.set(message.channelId, now);
-  const waitSeconds = Math.max(1, Math.ceil((groqRateLimitedUntil - now) / 1000));
+  const waitSeconds = Math.max(1, Math.ceil((aiRateLimitedUntil - now) / 1000));
   await message.channel.send(`⏳ I'm temporarily rate-limited by the AI service. Try me again in about ${waitSeconds}s.`);
 }
 
@@ -172,7 +172,7 @@ async function handleSummaryRequest(message, content) {
     const heading = `**Summary of the last ${messages.length} messages**`;
     await message.reply({ content: `${heading}\n\n${summary}`, allowedMentions: { repliedUser: false } });
   } catch (error) {
-    if (isGroqRateLimitError(error)) {
+    if (isGeminiRateLimitError(error)) {
       markAiRateLimited(error);
       await sendRateLimitNotice(message);
       return true;
@@ -251,7 +251,7 @@ async function respondToMessage(message, mode) {
       await saveMemories(config.guildId, message.author.id, allMemories);
     }
   } catch (error) {
-    if (isGroqRateLimitError(error)) {
+    if (isGeminiRateLimitError(error)) {
       markAiRateLimited(error);
       await sendRateLimitNotice(message);
       return;
@@ -298,7 +298,7 @@ async function handleSemiMessage(message, content) {
     spontaneousCooldowns.set(message.channelId, now);
     await respondToMessage(message, 'semi');
   } catch (error) {
-    if (isGroqRateLimitError(error)) {
+    if (isGeminiRateLimitError(error)) {
       markAiRateLimited(error);
       return;
     }
@@ -309,7 +309,8 @@ async function handleSemiMessage(message, content) {
 client.once('ready', () => {
   console.log(`✅ ${client.user.tag} is online.`);
   console.log(`Guild lock: ${config.guildId}`);
-  console.log(`Model: ${config.groqModel}`);
+  console.log(`Main model: ${config.geminiModel}`);
+  console.log(`Classifier model: ${config.geminiClassifierModel}`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -343,7 +344,7 @@ client.on('messageCreate', async (message) => {
     console.error('Message handler error:', error);
 
     if (message.guildId === config.guildId && !message.author.bot && message.content.length < 2000) {
-      if (isGroqRateLimitError(error)) {
+      if (isGeminiRateLimitError(error)) {
         markAiRateLimited(error);
         try {
           await sendRateLimitNotice(message);
