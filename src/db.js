@@ -34,6 +34,13 @@ function encode(value) {
   return encodeURIComponent(value);
 }
 
+function normalizeMemory(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
 export async function getChannelMode(guildId, channelId) {
   const rows = await request('channels', {
     query: `?select=mode&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&limit=1`
@@ -114,14 +121,24 @@ export async function getUserMemories(guildId, discordId, limit) {
 export async function saveMemories(guildId, discordId, memories) {
   if (!memories?.length) return;
 
+  const existing = await getUserMemories(guildId, discordId, 100);
+  const existingKeys = new Set((existing || []).map((item) => normalizeMemory(item.memory)));
+  const newKeys = new Set();
+
   const rows = memories
     .filter((item) => typeof item?.memory === 'string' && item.memory.trim())
     .map((item) => ({
       guild_id: guildId,
       discord_id: discordId,
-      memory: item.memory.trim().slice(0, 500),
+      memory: item.memory.trim().replace(/\s+/g, ' ').slice(0, 500),
       importance: Math.min(1, Math.max(0, Number(item.importance) || 0.5))
-    }));
+    }))
+    .filter((item) => {
+      const key = normalizeMemory(item.memory);
+      if (!key || existingKeys.has(key) || newKeys.has(key)) return false;
+      newKeys.add(key);
+      return true;
+    });
 
   if (!rows.length) return;
   return request('memories', {
