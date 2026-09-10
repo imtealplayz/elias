@@ -1,6 +1,13 @@
-import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
+import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
+
+// Supabase's current Realtime client expects a WebSocket implementation on
+// Node.js < 22. Installing `ws` is not enough in some ESM/runtime combinations,
+// so provide it globally before createClient() is called.
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = ws;
+}
 
 export const supabase = createClient(config.supabaseUrl, config.supabaseSecretKey, {
   auth: {
