@@ -1,11 +1,12 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
 import {
+  deleteUserMemories,
   getChannelMode,
+  listChannelModes,
   removeChannelMode,
   setChannelMode,
-  getUserMemories,
-  supabase
+  getUserMemories
 } from './db.js';
 
 function targetChannel(message) {
@@ -99,13 +100,7 @@ export async function handleCommand(message) {
       return true;
     }
 
-    const { data, error } = await supabase
-      .from('channels')
-      .select('channel_id, mode')
-      .eq('guild_id', config.guildId)
-      .order('mode');
-
-    if (error) throw error;
+    const data = await listChannelModes(config.guildId);
 
     if (!data?.length) {
       await message.reply('No Elias channels are configured yet.');
@@ -133,13 +128,7 @@ export async function handleCommand(message) {
   }
 
   if (name === 'forget') {
-    const { error } = await supabase
-      .from('memories')
-      .delete()
-      .eq('guild_id', config.guildId)
-      .eq('discord_id', message.author.id);
-
-    if (error) throw error;
+    await deleteUserMemories(config.guildId, message.author.id);
     await message.reply('🧠✅ Deleted all memories I had stored about you.');
     return true;
   }
