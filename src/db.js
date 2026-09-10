@@ -90,7 +90,7 @@ export async function upsertUser(user) {
   });
 }
 
-export async function saveMessage({ guildId, channelId, userId, username, content }) {
+export async function saveMessage({ guildId, channelId, userId, username, content, isBot = false }) {
   return request('messages', {
     method: 'POST',
     body: [{
@@ -98,7 +98,8 @@ export async function saveMessage({ guildId, channelId, userId, username, conten
       channel_id: channelId,
       discord_id: userId,
       username,
-      content
+      content,
+      is_bot: Boolean(isBot)
     }],
     prefer: 'return=minimal'
   });
@@ -106,7 +107,7 @@ export async function saveMessage({ guildId, channelId, userId, username, conten
 
 export async function getRecentMessages(guildId, channelId, limit) {
   const rows = await request('messages', {
-    query: `?select=discord_id,username,content,created_at&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&order=created_at.desc&limit=${Math.max(1, Number(limit) || 18)}`
+    query: `?select=discord_id,username,content,is_bot,created_at&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&order=created_at.desc&limit=${Math.max(1, Number(limit) || 18)}`
   });
 
   return (rows || []).reverse();
