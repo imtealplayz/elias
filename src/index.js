@@ -22,6 +22,7 @@ const client = new Client({
 
 const spontaneousCooldowns = new Map();
 const channelQueues = new Map();
+const processedMessageIds = new Set();
 
 function queueForChannel(channelId, task) {
   const previous = channelQueues.get(channelId) || Promise.resolve();
@@ -38,6 +39,14 @@ function queueForChannel(channelId, task) {
   return next;
 }
 
+function markMessageProcessed(messageId) {
+  if (processedMessageIds.has(messageId)) return false;
+
+  processedMessageIds.add(messageId);
+  setTimeout(() => processedMessageIds.delete(messageId), 10 * 60 * 1000).unref?.();
+  return true;
+}
+
 function cleanContent(message) {
   let content = message.content.trim();
 
@@ -51,6 +60,17 @@ function cleanContent(message) {
 function containsNameMention(content) {
   const escaped = config.botName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`\\b${escaped}\\b`, 'i').test(content);
+}
+
+async function isReplyToElias(message) {
+  if (!message.reference?.messageId) return false;
+
+  try {
+    const referenced = message.referencedMessage || await message.fetchReference();
+    return referenced?.author?.id === client.user?.id;
+  } catch {
+    return false;
+  }
 }
 
 async function sendLongReply(message, reply) {
@@ -117,9 +137,10 @@ async function respondToMessage(message, mode) {
 }
 
 async function handleSemiMessage(message, content) {
+  const repliedToElias = await isReplyToElias(message);
   const directlyAddressed =
     message.mentions.has(client.user.id) ||
-    message.reference?.messageId != null ||
+    repliedToElias ||
     containsNameMention(content);
 
   if (directlyAddressed) {
@@ -160,6 +181,7 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     if (!message.guild) return;
     if (message.guild.id !== config.guildId) return;
+    if (!markMessageProcessed(message.id)) return;
 
     if (message.content.startsWith(config.prefix)) {
       await handleCommand(message);
