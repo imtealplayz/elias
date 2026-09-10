@@ -9,15 +9,17 @@ import {
   upsertUser
 } from './db.js';
 import { decideSpontaneousReply, generateReply, getGeminiRetryAfterMs, isGeminiRateLimitError } from './ai.js';
+import {
+  decideSpontaneousReplyFallback,
+  generateReplyFallback,
+  getGroqRetryAfterMs,
+  isGroqRateLimitError
+} from './groq-fallback.js';
 import { summarizeMessages } from './summarize.js';
 import { handleCommand } from './commands.js';
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Channel]
 });
 
@@ -29,22 +31,15 @@ const rateLimitNotices = new Map();
 
 function queueForChannel(channelId, task) {
   const previous = channelQueues.get(channelId) || Promise.resolve();
-  const next = previous
-    .catch(() => undefined)
-    .then(task)
-    .finally(() => {
-      if (channelQueues.get(channelId) === next) {
-        channelQueues.delete(channelId);
-      }
-    });
-
+  const next = previous.catch(() => undefined).then(task).finally(() => {
+    if (channelQueues.get(channelId) === next) channelQueues.delete(channelId);
+  });
   channelQueues.set(channelId, next);
   return next;
 }
 
 function markMessageProcessed(messageId) {
   if (processedMessageIds.has(messageId)) return false;
-
   processedMessageIds.add(messageId);
   setTimeout(() => processedMessageIds.delete(messageId), 10 * 60 * 1000).unref?.();
   return true;
@@ -54,28 +49,33 @@ function isAiTemporarilyUnavailable() {
   return Date.now() < aiRateLimitedUntil;
 }
 
+function isProviderRateLimitError(error) {
+  return isGeminiRateLimitError(error) || isGroqRateLimitError(error);
+}
+
+function getRetryAfterMs(error) {
+  if (isGeminiRateLimitError(error)) return getGeminiRetryAfterMs(error);
+  if (isGroqRateLimitError(error)) return getGroqRetryAfterMs(error);
+  return 60 * 1000;
+}
+
 function markAiRateLimited(error) {
-  aiRateLimitedUntil = Math.max(aiRateLimitedUntil, Date.now() + getGeminiRetryAfterMs(error));
-  console.warn(`Gemini rate-limited until ${new Date(aiRateLimitedUntil).toISOString()}`);
+  aiRateLimitedUntil = Math.max(aiRateLimitedUntil, Date.now() + getRetryAfterMs(error));
+  console.warn(`Both AI providers appear unavailable until ${new Date(aiRateLimitedUntil).toISOString()}`);
 }
 
 async function sendRateLimitNotice(message) {
   const now = Date.now();
   const lastNotice = rateLimitNotices.get(message.channelId) || 0;
   if (now - lastNotice < 10 * 60 * 1000) return;
-
   rateLimitNotices.set(message.channelId, now);
   const waitSeconds = Math.max(1, Math.ceil((aiRateLimitedUntil - now) / 1000));
-  await message.channel.send(`⏳ I'm temporarily rate-limited by the AI service. Try me again in about ${waitSeconds}s.`);
+  await message.channel.send(`⏳ I'm temporarily rate-limited by the AI services. Try me again in about ${waitSeconds}s.`);
 }
 
 function cleanContent(message) {
   let content = message.content.trim();
-
-  if (client.user) {
-    content = content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
-  }
-
+  if (client.user) content = content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
   return content || message.content.trim();
 }
 
@@ -86,7 +86,6 @@ function containsNameMention(content) {
 
 async function isReplyToElias(message) {
   if (!message.reference?.messageId) return false;
-
   try {
     const referenced = message.referencedMessage || await message.fetchReference();
     return referenced?.author?.id === client.user?.id;
@@ -101,48 +100,34 @@ function extractExplicitMemories(content) {
     /^(?:my name is|call me|i(?:'| a)m called)\s+([A-Za-z][A-Za-z0-9_-]{1,31})[.!?]?$/i,
     /^(?:please call me)\s+([A-Za-z][A-Za-z0-9_-]{1,31})[.!?]?$/i
   ];
-
   for (const pattern of patterns) {
     const match = content.match(pattern);
     if (!match) continue;
-
-    memories.push({
-      memory: `User prefers to be called ${match[1].trim()}`,
-      importance: 1
-    });
+    memories.push({ memory: `User prefers to be called ${match[1].trim()}`, importance: 1 });
     break;
   }
-
   return memories;
 }
 
 function mergeMemories(...groups) {
   const merged = [];
   const seen = new Set();
-
   for (const group of groups) {
     for (const item of group || []) {
       if (typeof item?.memory !== 'string' || !item.memory.trim()) continue;
-
       const memory = item.memory.trim().replace(/\s+/g, ' ').slice(0, 500);
       const key = memory.toLowerCase();
       if (seen.has(key)) continue;
-
       seen.add(key);
-      merged.push({
-        memory,
-        importance: Math.min(1, Math.max(0, Number(item.importance) || 0.5))
-      });
+      merged.push({ memory, importance: Math.min(1, Math.max(0, Number(item.importance) || 0.5)) });
     }
   }
-
   return merged;
 }
 
 function getSummaryCount(content) {
   const match = content.match(/\bsummar(?:y|ize|ise|ized|ised|izing|ising)\b[\s\S]*?\blast\s+(\d{1,3})\s+messages?\b/i);
   if (match) return Math.min(100, Math.max(1, Number(match[1])));
-
   if (/\bsummar(?:y|ize|ise)\b/i.test(content)) return 20;
   return null;
 }
@@ -150,18 +135,13 @@ function getSummaryCount(content) {
 async function handleSummaryRequest(message, content) {
   const count = getSummaryCount(content);
   if (!count) return false;
-
   if (isAiTemporarilyUnavailable()) {
     await sendRateLimitNotice(message);
     return true;
   }
 
   const fetched = await message.channel.messages.fetch({ limit: Math.min(100, count + 1) });
-  const messages = [...fetched.values()]
-    .filter((item) => item.id !== message.id)
-    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
-    .slice(-count);
-
+  const messages = [...fetched.values()].filter((item) => item.id !== message.id).sort((a, b) => a.createdTimestamp - b.createdTimestamp).slice(-count);
   if (!messages.length) {
     await message.reply({ content: "I couldn't find any messages to summarize.", allowedMentions: { repliedUser: false } });
     return true;
@@ -169,30 +149,54 @@ async function handleSummaryRequest(message, content) {
 
   try {
     const summary = await summarizeMessages(messages);
-    const heading = `**Summary of the last ${messages.length} messages**`;
-    await message.reply({ content: `${heading}\n\n${summary}`, allowedMentions: { repliedUser: false } });
+    await message.reply({ content: `**Summary of the last ${messages.length} messages**\n\n${summary}`, allowedMentions: { repliedUser: false } });
   } catch (error) {
-    if (isGeminiRateLimitError(error)) {
+    if (isProviderRateLimitError(error)) {
       markAiRateLimited(error);
       await sendRateLimitNotice(message);
       return true;
     }
     throw error;
   }
-
   return true;
 }
 
 async function sendLongReply(message, reply) {
   const text = reply.trim();
   if (!text) return;
-
   for (let i = 0; i < text.length; i += 1900) {
     const chunk = text.slice(i, i + 1900);
-    if (i === 0) {
-      await message.reply({ content: chunk, allowedMentions: { repliedUser: false } });
-    } else {
-      await message.channel.send(chunk);
+    if (i === 0) await message.reply({ content: chunk, allowedMentions: { repliedUser: false } });
+    else await message.channel.send(chunk);
+  }
+}
+
+async function generateReplyWithFallback(payload) {
+  try {
+    return await generateReply(payload);
+  } catch (primaryError) {
+    console.warn('Gemini request failed; trying Groq fallback:', primaryError?.message || primaryError);
+    try {
+      return await generateReplyFallback(payload);
+    } catch (fallbackError) {
+      if (isProviderRateLimitError(fallbackError)) throw fallbackError;
+      if (isProviderRateLimitError(primaryError)) throw primaryError;
+      throw fallbackError;
+    }
+  }
+}
+
+async function decideSpontaneousReplyWithFallback(payload) {
+  try {
+    return await decideSpontaneousReply(payload);
+  } catch (primaryError) {
+    console.warn('Gemini classifier failed; trying Groq fallback:', primaryError?.message || primaryError);
+    try {
+      return await decideSpontaneousReplyFallback(payload);
+    } catch (fallbackError) {
+      if (isProviderRateLimitError(fallbackError)) throw fallbackError;
+      if (isProviderRateLimitError(primaryError)) throw primaryError;
+      throw fallbackError;
     }
   }
 }
@@ -200,7 +204,6 @@ async function sendLongReply(message, reply) {
 async function respondToMessage(message, mode) {
   const content = cleanContent(message);
   if (!content) return;
-
   if (isAiTemporarilyUnavailable()) {
     await sendRateLimitNotice(message);
     return;
@@ -212,46 +215,16 @@ async function respondToMessage(message, mode) {
   ]);
 
   await upsertUser(message.author);
-  await saveMessage({
-    guildId: message.guildId,
-    channelId: message.channelId,
-    userId: message.author.id,
-    username: message.member?.displayName || message.author.username,
-    content,
-    isBot: false
-  });
+  await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: message.author.id, username: message.member?.displayName || message.author.username, content, isBot: false });
 
   try {
-    const result = await generateReply({
-      user: {
-        username: message.member?.displayName || message.author.username,
-        id: message.author.id
-      },
-      content,
-      history,
-      memories,
-      mode
-    });
-
+    const result = await generateReplyWithFallback({ user: { username: message.member?.displayName || message.author.username, id: message.author.id }, content, history, memories, mode });
     await sendLongReply(message, result.reply);
-
-    await saveMessage({
-      guildId: message.guildId,
-      channelId: message.channelId,
-      userId: client.user.id,
-      username: client.user.username,
-      content: result.reply,
-      isBot: true
-    });
-
-    const explicitMemories = extractExplicitMemories(content);
-    const allMemories = mergeMemories(explicitMemories, result.memories);
-
-    if (allMemories.length) {
-      await saveMemories(config.guildId, message.author.id, allMemories);
-    }
+    await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: client.user.id, username: client.user.username, content: result.reply, isBot: true });
+    const allMemories = mergeMemories(extractExplicitMemories(content), result.memories);
+    if (allMemories.length) await saveMemories(config.guildId, message.author.id, allMemories);
   } catch (error) {
-    if (isGeminiRateLimitError(error)) {
+    if (isProviderRateLimitError(error)) {
       markAiRateLimited(error);
       await sendRateLimitNotice(message);
       return;
@@ -262,12 +235,8 @@ async function respondToMessage(message, mode) {
 
 async function handleSemiMessage(message, content) {
   if (isAiTemporarilyUnavailable()) return;
-
   const repliedToElias = await isReplyToElias(message);
-  const directlyAddressed =
-    message.mentions.has(client.user.id) ||
-    repliedToElias ||
-    containsNameMention(content);
+  const directlyAddressed = message.mentions.has(client.user.id) || repliedToElias || containsNameMention(content);
 
   if (directlyAddressed) {
     if (await handleSummaryRequest(message, content)) return;
@@ -277,28 +246,17 @@ async function handleSemiMessage(message, content) {
 
   const now = Date.now();
   const lastSpontaneous = spontaneousCooldowns.get(message.channelId) || 0;
-
   if (now - lastSpontaneous < config.semiCooldownMs) return;
   if (Math.random() > config.spontaneousChance) return;
 
   const history = await getRecentMessages(config.guildId, message.channelId, config.maxContextMessages);
-
   try {
-    const shouldReply = await decideSpontaneousReply({
-      user: {
-        username: message.member?.displayName || message.author.username,
-        id: message.author.id
-      },
-      content,
-      history
-    });
-
+    const shouldReply = await decideSpontaneousReplyWithFallback({ user: { username: message.member?.displayName || message.author.username, id: message.author.id }, content, history });
     if (!shouldReply) return;
-
     spontaneousCooldowns.set(message.channelId, now);
     await respondToMessage(message, 'semi');
   } catch (error) {
-    if (isGeminiRateLimitError(error)) {
+    if (isProviderRateLimitError(error)) {
       markAiRateLimited(error);
       return;
     }
@@ -309,8 +267,8 @@ async function handleSemiMessage(message, content) {
 client.once('ready', () => {
   console.log(`✅ ${client.user.tag} is online.`);
   console.log(`Guild lock: ${config.guildId}`);
-  console.log(`Main model: ${config.geminiModel}`);
-  console.log(`Classifier model: ${config.geminiClassifierModel}`);
+  console.log(`Primary model: ${config.geminiModel}`);
+  console.log(`Fallback model: ${config.groqModel}`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -319,16 +277,13 @@ client.on('messageCreate', async (message) => {
     if (!message.guild) return;
     if (message.guild.id !== config.guildId) return;
     if (!markMessageProcessed(message.id)) return;
-
     if (message.content.startsWith(config.prefix)) {
       await handleCommand(message);
       return;
     }
 
     const mode = await getChannelMode(config.guildId, message.channelId);
-
     if (!mode || mode === 'blocked') return;
-
     const content = cleanContent(message);
 
     if (mode === 'main') {
@@ -336,39 +291,21 @@ client.on('messageCreate', async (message) => {
       await queueForChannel(message.channelId, () => respondToMessage(message, 'main'));
       return;
     }
-
-    if (mode === 'semi') {
-      await queueForChannel(message.channelId, () => handleSemiMessage(message, content));
-    }
+    if (mode === 'semi') await queueForChannel(message.channelId, () => handleSemiMessage(message, content));
   } catch (error) {
     console.error('Message handler error:', error);
-
     if (message.guildId === config.guildId && !message.author.bot && message.content.length < 2000) {
-      if (isGeminiRateLimitError(error)) {
+      if (isProviderRateLimitError(error)) {
         markAiRateLimited(error);
-        try {
-          await sendRateLimitNotice(message);
-        } catch {
-          // Ignore secondary Discord errors.
-        }
+        try { await sendRateLimitNotice(message); } catch {}
         return;
       }
-
-      try {
-        await message.channel.send('⚠️ I hit an error while thinking. Try again in a moment.');
-      } catch {
-        // Ignore secondary Discord errors.
-      }
+      try { await message.channel.send('⚠️ I hit an error while thinking. Try again in a moment.'); } catch {}
     }
   }
 });
 
-process.on('unhandledRejection', (error) => {
-  console.error('Unhandled rejection:', error);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
-});
+process.on('unhandledRejection', (error) => console.error('Unhandled rejection:', error));
+process.on('uncaughtException', (error) => console.error('Uncaught exception:', error));
 
 client.login(config.token);
