@@ -9,6 +9,7 @@ import {
   upsertUser
 } from './db.js';
 import { decideSpontaneousReply, generateReply, getGroqRetryAfterMs, isGroqRateLimitError } from './ai.js';
+import { summarizeMessages } from './summarize.js';
 import { handleCommand } from './commands.js';
 
 const client = new Client({
@@ -138,6 +139,50 @@ function mergeMemories(...groups) {
   return merged;
 }
 
+function getSummaryCount(content) {
+  const match = content.match(/\bsummar(?:y|ize|ise|ized|ised|izing|ising)\b[\s\S]*?\blast\s+(\d{1,3})\s+messages?\b/i);
+  if (match) return Math.min(100, Math.max(1, Number(match[1])));
+
+  if (/\bsummar(?:y|ize|ise)\b/i.test(content)) return 20;
+  return null;
+}
+
+async function handleSummaryRequest(message, content) {
+  const count = getSummaryCount(content);
+  if (!count) return false;
+
+  if (isAiTemporarilyUnavailable()) {
+    await sendRateLimitNotice(message);
+    return true;
+  }
+
+  const fetched = await message.channel.messages.fetch({ limit: Math.min(100, count + 1) });
+  const messages = [...fetched.values()]
+    .filter((item) => item.id !== message.id)
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+    .slice(-count);
+
+  if (!messages.length) {
+    await message.reply({ content: "I couldn't find any messages to summarize.", allowedMentions: { repliedUser: false } });
+    return true;
+  }
+
+  try {
+    const summary = await summarizeMessages(messages);
+    const heading = `**Summary of the last ${messages.length} messages**`;
+    await message.reply({ content: `${heading}\n\n${summary}`, allowedMentions: { repliedUser: false } });
+  } catch (error) {
+    if (isGroqRateLimitError(error)) {
+      markAiRateLimited(error);
+      await sendRateLimitNotice(message);
+      return true;
+    }
+    throw error;
+  }
+
+  return true;
+}
+
 async function sendLongReply(message, reply) {
   const text = reply.trim();
   if (!text) return;
@@ -225,6 +270,7 @@ async function handleSemiMessage(message, content) {
     containsNameMention(content);
 
   if (directlyAddressed) {
+    if (await handleSummaryRequest(message, content)) return;
     await respondToMessage(message, 'semi');
     return;
   }
@@ -285,6 +331,7 @@ client.on('messageCreate', async (message) => {
     const content = cleanContent(message);
 
     if (mode === 'main') {
+      if (await handleSummaryRequest(message, content)) return;
       await queueForChannel(message.channelId, () => respondToMessage(message, 'main'));
       return;
     }
