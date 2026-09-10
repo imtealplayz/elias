@@ -1,6 +1,6 @@
 {
   "name": "elias",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A conversational Discord AI bot with persistent memory and channel-aware behavior.",
   "type": "module",
   "main": "src/index.js",
