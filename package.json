@@ -1,6 +1,6 @@
 {
   "name": "elias",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A conversational Discord AI bot with persistent memory and channel-aware behavior.",
   "type": "module",
   "main": "src/index.js",
@@ -8,12 +8,13 @@
     "start": "node src/index.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "dependencies": {
     "discord.js": "^14.25.1",
     "dotenv": "^17.2.2",
     "groq-sdk": "^0.37.0",
-    "@supabase/supabase-js": "^2.57.0"
+    "@supabase/supabase-js": "^2.57.0",
+    "ws": "^8.18.3"
   }
 }
