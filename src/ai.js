@@ -128,33 +128,45 @@ function getCurrentIST() {
 }
 
 function needsLiveSearch(content) {
-  const text = content.toLowerCase();
+  const text = content.toLowerCase().trim();
+
+  // Current clock/date questions are answered from the authoritative IST timestamp,
+  // not from the web. This prevents unnecessary browser-search calls.
+  if (/\b(?:what|tell me|can you tell me)\s+(?:is\s+)?(?:the\s+)?(?:current\s+)?(?:time|date)\b/i.test(text)) {
+    return false;
+  }
+
   return /\b(latest|recent|today|tonight|this week|this month|currently|right now|current|news|update|updates|what happened|released|release date|patch|patch notes|version|price|prices|score|scores|standings|schedule|announcement|announced|launch(?:ed)?|launched|coming out|when is)\b/i.test(text);
 }
 
 async function getLiveWebContext(content) {
   if (!needsLiveSearch(content)) return '';
 
-  const response = await groq.chat.completions.create({
-    model: config.groqModel,
-    messages: [
-      {
-        role: 'system',
-        content: `Search the web for current information needed to answer the user's request. The current time in IST is ${getCurrentIST()}. Give a concise factual research brief for another assistant. Include the relevant dates and distinguish confirmed facts from uncertainty. Do not answer conversationally.`
-      },
-      { role: 'user', content }
-    ],
-    temperature: 0.2,
-    max_completion_tokens: 900,
-    reasoning_effort: 'low',
-    include_reasoning: false,
-    tool_choice: 'required',
-    tools: [
-      { type: 'browser_search' }
-    ]
-  });
+  try {
+    const response = await groq.chat.completions.create({
+      model: config.groqModel,
+      messages: [
+        {
+          role: 'system',
+          content: `Search the web for current information needed to answer the user's request. The current time in IST is ${getCurrentIST()}. Give a concise factual research brief for another assistant. Include the relevant dates and distinguish confirmed facts from uncertainty. Do not answer conversationally.`
+        },
+        { role: 'user', content }
+      ],
+      temperature: 0.2,
+      max_completion_tokens: 900,
+      reasoning_effort: 'low',
+      include_reasoning: false,
+      tool_choice: 'required',
+      tools: [
+        { type: 'browser_search' }
+      ]
+    });
 
-  return response.choices?.[0]?.message?.content?.trim() || '';
+    return response.choices?.[0]?.message?.content?.trim() || '';
+  } catch (error) {
+    console.error('Live web search failed; continuing without live context:', error);
+    return '';
+  }
 }
 
 export async function generateReply({ user, content, history, memories, mode }) {
