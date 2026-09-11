@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { config } from './config.js';
 import {
+  deleteMemoryIds,
   getChannelMode,
   getRecentMessages,
   getUserMemories,
@@ -132,6 +133,86 @@ function getSummaryCount(content) {
   return null;
 }
 
+function isMemoryForgetRequest(content) {
+  return /\b(?:forget|remove|delete|erase)\b[\s\S]{0,180}\b(?:this|that|it|thing|memory|about|regarding|from memory|from your memory)\b/i.test(content)
+    || /\b(?:forget|remove|delete|erase)\s+(?:the|my|that|this)?\s*(?:memory|memories)\b/i.test(content)
+    || /\b(?:forget|remove|delete|erase)\s+(?:about|regarding)\b/i.test(content);
+}
+
+function tokenizeForMemoryMatch(text) {
+  return new Set(
+    String(text || '')
+      .toLowerCase()
+      .replace(/colour/g, 'color')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length >= 3 && !new Set([
+        'the', 'and', 'that', 'this', 'about', 'with', 'from', 'your', 'you', 'for', 'are',
+        'was', 'were', 'have', 'has', 'had', 'into', 'just', 'like', 'dont', 'does', 'did',
+        'not', 'its', 'her', 'his', 'she', 'him', 'them', 'they', 'thing', 'thingy'
+      ]).has(word))
+  );
+}
+
+function pickMemoriesToForget(content, memories, history) {
+  if (!isMemoryForgetRequest(content) || !memories?.length) return [];
+
+  const vagueReference = /\b(?:forget|remove|delete|erase)\s+(?:about\s+)?(?:this|that|it|thing|thingy)\b/i.test(content)
+    || /\b(?:forget|remove|delete|erase)\s+(?:this|that|it)\b/i.test(content);
+
+  const explicitTarget = vagueReference
+    ? ''
+    : content
+      .replace(/\b(?:please\s+)?(?:forget|remove|delete|erase)\b/gi, ' ')
+      .replace(/\b(?:about|regarding|from your memory|from memory|this|that|it)\b/gi, ' ')
+      .replace(/[.!?,:;]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const context = vagueReference
+    ? (history || []).slice(-4).map((message) => message.content).join(' ')
+    : explicitTarget;
+
+  const targetTokens = tokenizeForMemoryMatch(context);
+  if (!targetTokens.size) return [];
+
+  const scored = memories
+    .map((memory) => {
+      const memoryTokens = tokenizeForMemoryMatch(memory.memory);
+      let overlap = 0;
+      for (const token of targetTokens) {
+        if (memoryTokens.has(token)) overlap++;
+      }
+
+      const memoryText = String(memory.memory || '').toLowerCase().replace(/colour/g, 'color');
+      const targetText = String(context || '').toLowerCase().replace(/colour/g, 'color');
+      const substringBoost = targetText.length >= 5 && memoryText.includes(targetText) ? 2 : 0;
+
+      return { memory, score: overlap + substringBoost };
+    })
+    .filter((entry) => entry.score >= 1)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  if (!scored.length) return [];
+
+  if (vagueReference && scored[0].score < 2) return [];
+  return scored.map((entry) => entry.memory);
+}
+
+async function forgetRelevantMemories({ content, memories, history, guildId, discordId }) {
+  const selected = pickMemoriesToForget(content, memories, history);
+  if (!selected.length) return { deleted: 0, remainingMemories: memories };
+
+  const ids = selected.map((memory) => memory.id);
+  const deleted = await deleteMemoryIds(guildId, discordId, ids);
+  const deletedSet = new Set(ids.map(Number));
+  const remainingMemories = memories.filter((memory) => !deletedSet.has(Number(memory.id)));
+
+  console.log(`Deleted ${deleted} memory item(s) for ${discordId} after explicit forget request.`);
+  return { deleted, remainingMemories };
+}
+
 async function handleSummaryRequest(message, content) {
   const count = getSummaryCount(content);
   if (!count) return false;
@@ -209,16 +290,30 @@ async function respondToMessage(message, mode) {
     return;
   }
 
-  const [history, memories] = await Promise.all([
+  const [history, loadedMemories] = await Promise.all([
     getRecentMessages(config.guildId, message.channelId, config.maxContextMessages),
     getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
   ]);
+
+  const { remainingMemories } = await forgetRelevantMemories({
+    content,
+    memories: loadedMemories,
+    history,
+    guildId: config.guildId,
+    discordId: message.author.id
+  });
 
   await upsertUser(message.author);
   await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: message.author.id, username: message.member?.displayName || message.author.username, content, isBot: false });
 
   try {
-    const result = await generateReplyWithFallback({ user: { username: message.member?.displayName || message.author.username, id: message.author.id }, content, history, memories, mode });
+    const result = await generateReplyWithFallback({
+      user: { username: message.member?.displayName || message.author.username, id: message.author.id },
+      content,
+      history,
+      memories: remainingMemories,
+      mode
+    });
     await sendLongReply(message, result.reply);
     await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: client.user.id, username: client.user.username, content: result.reply, isBot: true });
     const allMemories = mergeMemories(extractExplicitMemories(content), result.memories);
