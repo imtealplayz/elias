@@ -1,7 +1,8 @@
 import {
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  EmbedBuilder
 } from 'discord.js';
 
 const games = new Map();
@@ -46,7 +47,7 @@ function draw(game) {
 }
 
 function handText(hand) {
-  return hand.map(cardLabel).join(' ');
+  return hand.map(cardLabel).join('  ');
 }
 
 function buttons(game, disabled = false) {
@@ -54,34 +55,52 @@ function buttons(game, disabled = false) {
     new ButtonBuilder()
       .setCustomId(`bj:${game.id}:hit`)
       .setLabel('Hit')
+      .setEmoji('🎴')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(`bj:${game.id}:stand`)
       .setLabel('Stand')
+      .setEmoji('✋')
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled)
   )];
 }
 
-function render(game, finished = false) {
+function renderEmbed(game, finished = false) {
   const playerValue = handValue(game.player);
   const dealerValue = finished ? handValue(game.dealer) : handValue(game.dealer.slice(1));
   const dealerCards = finished
     ? handText(game.dealer)
-    : `🂠 ${cardLabel(game.dealer[1])}`;
+    : `🂠  ${cardLabel(game.dealer[1])}`;
 
-  return `**Blackjack** 🃏\n\n` +
-    `**Your hand:** ${handText(game.player)}  — **${playerValue}**\n` +
-    `**Elias:** ${dealerCards}${finished ? `  — **${dealerValue}**` : ''}\n\n` +
-    (finished ? game.result : 'Your move — **Hit** or **Stand**.');
+  const description = finished
+    ? game.result
+    : 'Choose **Hit** to draw another card or **Stand** to hold your hand.';
+
+  return new EmbedBuilder()
+    .setTitle('♠️ Blackjack')
+    .setDescription(description)
+    .addFields(
+      {
+        name: `👤 Your Hand • ${playerValue}`,
+        value: `> ${handText(game.player)}`,
+        inline: false
+      },
+      {
+        name: finished ? `🤖 Elias • ${dealerValue}` : '🤖 Elias • Hidden Card',
+        value: `> ${dealerCards}`,
+        inline: false
+      }
+    )
+    .setFooter({ text: finished ? 'Game over • Start another round anytime' : 'Blackjack • Elias is dealing' });
 }
 
 async function finish(game, result, message) {
   game.finished = true;
   game.result = result;
   await message.edit({
-    content: render(game, true),
+    embeds: [renderEmbed(game, true)],
     components: buttons(game, true)
   });
 }
@@ -91,9 +110,10 @@ async function dealerTurn(game) {
 }
 
 export function isBlackjackRequest(content) {
-  return /\bblackjack\b/i.test(String(content || ''))
-    && /\b(?:play|start|game|deal|deal me|let'?s|wanna)\b/i.test(String(content || ''))
-    || /^\s*blackjack\s*$/i.test(String(content || ''));
+  const text = String(content || '');
+  return /\bblackjack\b/i.test(text)
+    && /\b(?:play|start|game|deal|deal me|let'?s|wanna)\b/i.test(text)
+    || /^\s*blackjack\s*$/i.test(text);
 }
 
 export async function startBlackjack(message) {
@@ -114,11 +134,14 @@ export async function startBlackjack(message) {
     channelId: message.channelId,
     userId: message.author.id,
     deck,
-    player: [draw({ deck }), draw({ deck })],
-    dealer: [draw({ deck }), draw({ deck })],
+    player: [],
+    dealer: [],
     finished: false,
     result: ''
   };
+
+  game.player.push(draw(game), draw(game));
+  game.dealer.push(draw(game), draw(game));
   games.set(game.id, game);
 
   const playerValue = handValue(game.player);
@@ -129,12 +152,15 @@ export async function startBlackjack(message) {
     if (playerValue === 21 && dealerValue === 21) game.result = '🤝 **Push!** You both have blackjack.';
     else if (playerValue === 21) game.result = '🎉 **Blackjack!** You win.';
     else game.result = '🤖 **Elias has blackjack!** You lose.';
-    await message.reply({ content: render(game, true), components: buttons(game, true) });
+    await message.reply({
+      embeds: [renderEmbed(game, true)],
+      components: buttons(game, true)
+    });
     return true;
   }
 
   const gameMessage = await message.reply({
-    content: render(game),
+    embeds: [renderEmbed(game)],
     components: buttons(game)
   });
   game.messageId = gameMessage.id;
@@ -158,7 +184,7 @@ export async function handleBlackjackInteraction(interaction) {
     game.player.push(draw(game));
     const value = handValue(game.player);
     if (value > 21) {
-      await finish(game, `💀 **Bust!** You went over 21. Elias wins.`, interaction.message);
+      await finish(game, '💀 **Bust!** You went over 21. Elias wins.', interaction.message);
       return true;
     }
     if (value === 21) {
@@ -168,11 +194,17 @@ export async function handleBlackjackInteraction(interaction) {
       else if (value === dealerValue) game.result = '🤝 **Push!** Same score.';
       else game.result = '🤖 **Elias wins.**';
       game.finished = true;
-      await interaction.message.edit({ content: render(game, true), components: buttons(game, true) });
+      await interaction.message.edit({
+        embeds: [renderEmbed(game, true)],
+        components: buttons(game, true)
+      });
       return true;
     }
 
-    await interaction.message.edit({ content: render(game), components: buttons(game) });
+    await interaction.message.edit({
+      embeds: [renderEmbed(game)],
+      components: buttons(game)
+    });
     return true;
   }
 
@@ -186,7 +218,10 @@ export async function handleBlackjackInteraction(interaction) {
     else game.result = '🤖 **Elias wins!**';
     game.finished = true;
 
-    await interaction.message.edit({ content: render(game, true), components: buttons(game, true) });
+    await interaction.message.edit({
+      embeds: [renderEmbed(game, true)],
+      components: buttons(game, true)
+    });
     return true;
   }
 
