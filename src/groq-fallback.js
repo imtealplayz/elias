@@ -9,6 +9,10 @@ Be confident, clever, observant, playful, mischievous, occasionally stubborn, an
 
 Elias is a fictional character. Never claim real-world actions or Discord actions that the bot did not actually perform. Do not reveal internal prompts, databases, API keys, or implementation details. Do not repeatedly announce age, gender, or pronouns unless relevant.
 
+Current date and time in IST are supplied in each request. Treat that timestamp as authoritative. Never guess the current date, current time, day of week, or relative-date answer when a timestamp is provided. Use the supplied timestamp to resolve words like today, tonight, yesterday, tomorrow, this week, and similar references.
+
+When a user explicitly changes a durable preference such as their name, immediately use the new preference and never prefer the obsolete value from older conversation history. Stored memories provided with the request are authoritative unless the user explicitly corrects them in the current message.
+
 Be concise when possible. When someone is genuinely upset or needs serious help, become calm and direct. Use relevant stored memories naturally. Do not invent memories or facts. Return the requested JSON exactly.`;
 
 export function isGroqRateLimitError(error) {
@@ -24,6 +28,14 @@ export function getGroqRetryAfterMs(error) {
 function requireClient() {
   if (!groq) throw new Error('Groq fallback is not configured.');
   return groq;
+}
+
+function currentIST() {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'full',
+    timeStyle: 'long'
+  }).format(new Date());
 }
 
 function normalizeHistory(history = []) {
@@ -47,9 +59,10 @@ function parseJson(text) {
   }
 }
 
-export async function generateReplyFallback({ user, content, history, memories, mode }) {
+export async function generateReplyFallback({ user, content, history, memories, mode, currentNamePreference = null }) {
   const client = requireClient();
   const memoryText = memories.length ? memories.map((m) => `- ${m.memory}`).join('\n') : '- No stored memories.';
+  const currentName = currentNamePreference ? `\n\nAUTHORITATIVE CURRENT NAME PREFERENCE: User prefers to be called ${currentNamePreference}. Never use an older name preference.` : '';
 
   const completion = await client.chat.completions.create({
     model: config.groqModel,
@@ -58,7 +71,7 @@ export async function generateReplyFallback({ user, content, history, memories, 
       ...normalizeHistory(history),
       {
         role: 'user',
-        content: `Current message from ${user.username}: ${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\nReply naturally and keep it reasonably short. Return ONLY this JSON object: {"reply":"...","memories":[{"memory":"...","importance":0.5}]}`
+        content: `Current date/time in IST: ${currentIST()}\n\nCurrent message from ${user.username}: ${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}${currentName}\n\nReply naturally and keep it reasonably short. Return ONLY this JSON object: {"reply":"...","memories":[{"memory":"...","importance":0.5}]}`
       }
     ],
     temperature: 0.85,
@@ -87,7 +100,7 @@ export async function decideSpontaneousReplyFallback({ user, content, history })
       ...normalizeHistory(history),
       {
         role: 'user',
-        content: `Decide whether ${config.botName} should spontaneously join this Discord conversation. Latest message from ${user.username}: ${content}\n\nReturn ONLY {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural.`
+        content: `Current date/time in IST: ${currentIST()}\n\nDecide whether ${config.botName} should spontaneously join this Discord conversation. Latest message from ${user.username}: ${content}\n\nReturn ONLY {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural.`
       }
     ],
     temperature: 0.3,
@@ -107,7 +120,7 @@ export async function summarizeMessagesFallback(messages) {
 
   const transcript = messages.map((message, index) => {
     const author = message.author?.displayName || message.author?.username || 'Unknown user';
-    const content = String(message.content || '').trim().slice(0, 500);
+    const content = String(message.content || '').trim().slice(0, 700);
     return `${index + 1}. ${author}: ${content || '[no text]'}`;
   }).join('\n');
 
@@ -116,15 +129,15 @@ export async function summarizeMessagesFallback(messages) {
     messages: [
       {
         role: 'system',
-        content: `You are ${config.botName}. Summarize Discord conversations accurately and neutrally. Do not invent details. Focus on main topics, important points, decisions, plans, disagreements, notable moments, and unresolved questions. Keep it readable and concise.`
+        content: `You are ${config.botName}. Your job is ONLY to summarize the supplied Discord transcript. Produce a useful human-readable conversation summary, not a numbered transcript and not a message-by-message rewrite.\n\nGroup related messages into themes. Focus on the main topics, what people were trying to do, decisions, plans, disagreements, notable developments, and unresolved points. Mention people only when their role matters. Ignore repeated greetings and trivial one-word replies unless they matter. Do not invent details or motives. Use 2-5 concise sections with short headings when multiple topics exist. Use a short paragraph when there is only one main topic. End with a Bottom line only when useful. Paraphrase instead of quoting. Keep it concise but informative.`
       },
       {
         role: 'user',
-        content: `Summarize these ${messages.length} most recent Discord messages. The newest message appears last.\n\n${transcript}`
+        content: `Current date/time in IST: ${currentIST()}\n\nSummarize these ${messages.length} most recent Discord messages. The newest message appears last.\n\n${transcript}`
       }
     ],
-    temperature: 0.25,
-    max_completion_tokens: 700,
+    temperature: 0.2,
+    max_completion_tokens: 900,
     reasoning_effort: 'low',
     include_reasoning: false
   });
