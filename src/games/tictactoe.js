@@ -4,6 +4,8 @@ import {
   ButtonStyle
 } from 'discord.js';
 import { handleBlackjackInteraction, isBlackjackRequest, startBlackjack } from './blackjack.js';
+import { handleMinesweeperInteraction, isMinesweeperRequest, startMinesweeper } from './minesweeper.js';
+import { handleWordleInteraction, isWordleRequest, startWordle } from './wordle.js';
 
 const games = new Map();
 
@@ -148,13 +150,17 @@ async function makeBotMove(game, message) {
 export function isTicTacToeRequest(content) {
   return /\b(?:play|start|let'?s\s+play|wanna\s+play)\b[\s\S]{0,80}\b(?:tic[ -]?tac[ -]?toe|ttt)\b/i.test(content)
     || /\b(?:tic[ -]?tac[ -]?toe|ttt)\b[\s\S]{0,30}\b(?:play|game)\b/i.test(content)
-    || isBlackjackRequest(content);
+    || isBlackjackRequest(content)
+    || isWordleRequest(content)
+    || isMinesweeperRequest(content);
 }
 
 export async function startTicTacToe(message) {
   const content = message.content.replace(new RegExp(`<@!?${message.client.user.id}>`, 'g'), '').trim();
 
   if (isBlackjackRequest(content)) return startBlackjack(message);
+  if (isWordleRequest(content)) return startWordle(message);
+  if (isMinesweeperRequest(content)) return startMinesweeper(message);
 
   const existing = [...games.values()].find((game) => game.userId === message.author.id && game.channelId === message.channelId && !game.finished);
   if (existing) {
@@ -194,6 +200,8 @@ export async function startTicTacToe(message) {
 
 export async function handleTicTacToeInteraction(interaction) {
   if (await handleBlackjackInteraction(interaction)) return true;
+  if (await handleWordleInteraction(interaction)) return true;
+  if (await handleMinesweeperInteraction(interaction)) return true;
   if (!interaction.isButton() || !interaction.customId.startsWith('ttt:')) return false;
 
   const [, gameId, indexText] = interaction.customId.split(':');
