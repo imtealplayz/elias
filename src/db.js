@@ -149,6 +149,19 @@ export async function saveMemories(guildId, discordId, memories) {
   });
 }
 
+export async function deleteMemoryIds(guildId, discordId, ids) {
+  const uniqueIds = [...new Set((ids || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!uniqueIds.length) return 0;
+
+  const deleted = await request('memories', {
+    method: 'DELETE',
+    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&id=in.(${uniqueIds.join(',')})`,
+    prefer: 'return=representation'
+  });
+
+  return Array.isArray(deleted) ? deleted.length : 0;
+}
+
 export async function deleteUserMemories(guildId, discordId) {
   return request('memories', {
     method: 'DELETE',
