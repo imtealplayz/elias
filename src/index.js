@@ -96,19 +96,26 @@ async function isReplyToElias(message) {
   }
 }
 
-function extractExplicitMemories(content) {
-  const memories = [];
+function extractNamePreference(content) {
+  const text = String(content || '').trim();
   const patterns = [
-    /^(?:my name is|call me|i(?:'| a)m called)\s+([A-Za-z][A-Za-z0-9_-]{1,31})[.!?]?$/i,
-    /^(?:please call me)\s+([A-Za-z][A-Za-z0-9_-]{1,31})[.!?]?$/i
+    /^(?:my name is|call me|please call me|i(?:'| a)m called)\s+(.+?)\s*[.!?]?$/i,
+    /\b(?:stop|don't|do not|never)\s+calling me\s+.+?\s+(?:and\s+)?(?:call me|use)\s+(.+?)\s*[.!?]?$/i,
+    /\b(?:from now on|going forward),?\s*(?:call me|use)\s+(.+?)\s*[.!?]?$/i,
+    /\b(?:instead of|rather than)\s+calling me\s+.+?,?\s*(?:call me|use)\s+(.+?)\s*[.!?]?$/i
   ];
   for (const pattern of patterns) {
-    const match = content.match(pattern);
+    const match = text.match(pattern);
     if (!match) continue;
-    memories.push({ memory: `User prefers to be called ${match[1].trim()}`, importance: 1 });
-    break;
+    const name = match[1].trim().replace(/[.!?]+$/g, '').trim();
+    if (name && name.length <= 80) return name;
   }
-  return memories;
+  return null;
+}
+
+function extractExplicitMemories(content) {
+  const name = extractNamePreference(content);
+  return name ? [{ memory: `User prefers to be called ${name}`, importance: 1 }] : [];
 }
 
 function mergeMemories(...groups) {
@@ -127,17 +134,20 @@ function mergeMemories(...groups) {
   return merged;
 }
 
-function getSummaryCount(content) {
-  const match = content.match(/\bsummar(?:y|ize|ise|ized|ised|izing|ising)\b[\s\S]*?\blast\s+(\d{1,3})\s+messages?\b/i);
-  if (match) return Math.min(100, Math.max(1, Number(match[1])));
-  if (/\bsummar(?:y|ize|ise)\b/i.test(content)) return 20;
-  return null;
+function isCreatorRequest(content) {
+  return /\b(?:who|what)\b[\s\S]{0,60}\b(?:created|made|built|developed|creator|developer|author)\b[\s\S]{0,40}\b(?:you|you're|your)\b/i.test(content)
+    || /\bwho(?:'s| is)\s+(?:your|the)\s+(?:creator|developer|maker|author)\b/i.test(content)
+    || /\bwho\s+(?:made|created|built|developed)\s+you\b/i.test(content)
+    || /\bwho\s+are\s+you\s+(?:made|created|built)\s+by\b/i.test(content);
 }
 
 function isMemoryForgetRequest(content) {
-  return /\b(?:forget|remove|delete|erase)\b[\s\S]{0,180}\b(?:this|that|it|thing|memory|about|regarding|from memory|from your memory)\b/i.test(content)
-    || /\b(?:forget|remove|delete|erase)\s+(?:the|my|that|this)?\s*(?:memory|memories)\b/i.test(content)
-    || /\b(?:forget|remove|delete|erase)\s+(?:about|regarding)\b/i.test(content);
+  const text = String(content || '');
+  return /\b(?:forget|remove|delete|erase)\b[\s\S]{0,180}\b(?:this|that|it|thing|thingy|memory|memories|about|regarding|from memory|from your memory)\b/i.test(text)
+    || /\b(?:stop|quit)\s+(?:talking|mentioning|bringing\s+up|discussing)\b[\s\S]{0,160}/i.test(text)
+    || /\b(?:don't|do not|never)\s+(?:talk|mention|bring\s+up|discuss)\b[\s\S]{0,160}/i.test(text)
+    || /\b(?:forget|remove|delete|erase)\s+(?:the|my|that|this)?\s*(?:memory|memories)\b/i.test(text)
+    || /\b(?:forget|remove|delete|erase)\s+(?:about|regarding)\b/i.test(text);
 }
 
 function tokenizeForMemoryMatch(text) {
@@ -150,7 +160,9 @@ function tokenizeForMemoryMatch(text) {
       .filter((word) => word.length >= 3 && !new Set([
         'the', 'and', 'that', 'this', 'about', 'with', 'from', 'your', 'you', 'for', 'are',
         'was', 'were', 'have', 'has', 'had', 'into', 'just', 'like', 'dont', 'does', 'did',
-        'not', 'its', 'her', 'his', 'she', 'him', 'them', 'they', 'thing', 'thingy'
+        'not', 'its', 'her', 'his', 'she', 'him', 'them', 'they', 'thing', 'thingy', 'stop',
+        'talking', 'mentioning', 'mention', 'bring', 'bringing', 'discussing', 'discuss',
+        'calling', 'call', 'instead', 'rather', 'than', 'please', 'never', 'quit', 'keep'
       ]).has(word))
   );
 }
@@ -159,19 +171,22 @@ function pickMemoriesToForget(content, memories, history) {
   if (!isMemoryForgetRequest(content) || !memories?.length) return [];
 
   const vagueReference = /\b(?:forget|remove|delete|erase)\s+(?:about\s+)?(?:this|that|it|thing|thingy)\b/i.test(content)
-    || /\b(?:forget|remove|delete|erase)\s+(?:this|that|it)\b/i.test(content);
+    || /\b(?:stop|quit)\s+(?:talking|mentioning|bringing\s+up|discussing)\b/i.test(content)
+    || /\b(?:don't|do not|never)\s+(?:talk|mention|bring\s+up|discuss)\b/i.test(content);
 
-  const explicitTarget = vagueReference
-    ? ''
-    : content
-      .replace(/\b(?:please\s+)?(?:forget|remove|delete|erase)\b/gi, ' ')
-      .replace(/\b(?:about|regarding|from your memory|from memory|this|that|it)\b/gi, ' ')
-      .replace(/[.!?,:;]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  let explicitTarget = content
+    .replace(/\b(?:please\s+)?(?:forget|remove|delete|erase)\b/gi, ' ')
+    .replace(/\b(?:stop|quit)\s+(?:talking|mentioning|bringing\s+up|discussing)\b/gi, ' ')
+    .replace(/\b(?:don't|do not|never)\s+(?:talk|mention|bring\s+up|discuss)\b/gi, ' ')
+    .replace(/\b(?:about|regarding|from your memory|from memory|this|that|it)\b/gi, ' ')
+    .replace(/[.!?,:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/^calling me\b/i.test(explicitTarget)) explicitTarget = explicitTarget.replace(/^calling me\b/i, '').trim();
 
   const context = vagueReference
-    ? (history || []).slice(-4).map((message) => message.content).join(' ')
+    ? [...(history || []).slice(-4).map((message) => message.content), content].join(' ')
     : explicitTarget;
 
   const targetTokens = tokenizeForMemoryMatch(context);
@@ -181,22 +196,17 @@ function pickMemoriesToForget(content, memories, history) {
     .map((memory) => {
       const memoryTokens = tokenizeForMemoryMatch(memory.memory);
       let overlap = 0;
-      for (const token of targetTokens) {
-        if (memoryTokens.has(token)) overlap++;
-      }
-
+      for (const token of targetTokens) if (memoryTokens.has(token)) overlap++;
       const memoryText = String(memory.memory || '').toLowerCase().replace(/colour/g, 'color');
       const targetText = String(context || '').toLowerCase().replace(/colour/g, 'color');
       const substringBoost = targetText.length >= 5 && memoryText.includes(targetText) ? 2 : 0;
-
       return { memory, score: overlap + substringBoost };
     })
     .filter((entry) => entry.score >= 1)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    .slice(0, 5);
 
   if (!scored.length) return [];
-
   if (vagueReference && scored[0].score < 2) return [];
   return scored.map((entry) => entry.memory);
 }
@@ -209,13 +219,13 @@ async function forgetRelevantMemories({ content, memories, history, guildId, dis
   const deleted = await deleteMemoryIds(guildId, discordId, ids);
   const deletedSet = new Set(ids.map(Number));
   const remainingMemories = memories.filter((memory) => !deletedSet.has(Number(memory.id)));
-
   console.log(`Deleted ${deleted} memory item(s) for ${discordId} after explicit forget request.`);
   return { deleted, remainingMemories };
 }
 
 async function handleSummaryRequest(message, content) {
-  const count = getSummaryCount(content);
+  const match = content.match(/\bsummar(?:y|ize|ise|ized|ised|izing|ising)\b[\s\S]*?\blast\s+(\d{1,3})\s+messages?\b/i);
+  const count = match ? Math.min(100, Math.max(1, Number(match[1]))) : (/\bsummar(?:y|ize|ise)\b/i.test(content) ? 20 : null);
   if (!count) return false;
   if (isAiTemporarilyUnavailable()) {
     await sendRateLimitNotice(message);
@@ -223,7 +233,11 @@ async function handleSummaryRequest(message, content) {
   }
 
   const fetched = await message.channel.messages.fetch({ limit: Math.min(100, count + 1) });
-  const messages = [...fetched.values()].filter((item) => item.id !== message.id).sort((a, b) => a.createdTimestamp - b.createdTimestamp).slice(-count);
+  const messages = [...fetched.values()]
+    .filter((item) => item.id !== message.id)
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+    .slice(-count);
+
   if (!messages.length) {
     await message.reply({ content: "I couldn't find any messages to summarize.", allowedMentions: { repliedUser: false } });
     return true;
@@ -244,7 +258,7 @@ async function handleSummaryRequest(message, content) {
 }
 
 async function sendLongReply(message, reply) {
-  const text = reply.trim();
+  const text = String(reply || '').trim();
   if (!text) return;
   for (let i = 0; i < text.length; i += 1900) {
     const chunk = text.slice(i, i + 1900);
@@ -296,9 +310,20 @@ async function respondToMessage(message, mode) {
     getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
   ]);
 
-  const { remainingMemories } = await forgetRelevantMemories({
+  const explicitName = extractNamePreference(content);
+  let memoriesAfterForget = loadedMemories;
+  if (explicitName) {
+    const oldNameMemories = loadedMemories.filter((memory) => /^user prefers to be called\b/i.test(memory.memory));
+    if (oldNameMemories.length) {
+      await deleteMemoryIds(config.guildId, message.author.id, oldNameMemories.map((memory) => memory.id));
+      const deletedSet = new Set(oldNameMemories.map((memory) => Number(memory.id)));
+      memoriesAfterForget = loadedMemories.filter((memory) => !deletedSet.has(Number(memory.id)));
+    }
+  }
+
+  const forgetResult = await forgetRelevantMemories({
     content,
-    memories: loadedMemories,
+    memories: memoriesAfterForget,
     history,
     guildId: config.guildId,
     discordId: message.author.id
@@ -308,16 +333,22 @@ async function respondToMessage(message, mode) {
   await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: message.author.id, username: message.member?.displayName || message.author.username, content, isBot: false });
 
   try {
-    const result = await generateReplyWithFallback({
-      user: { username: message.member?.displayName || message.author.username, id: message.author.id },
-      content,
-      history,
-      memories: remainingMemories,
-      mode
-    });
+    const result = isCreatorRequest(content)
+      ? { reply: 'I was created by Teal.', memories: [] }
+      : await generateReplyWithFallback({
+          user: { username: message.member?.displayName || message.author.username, id: message.author.id },
+          content,
+          history,
+          memories: forgetResult.remainingMemories,
+          mode,
+          currentNamePreference: explicitName || null
+        });
+
     await sendLongReply(message, result.reply);
     await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: client.user.id, username: client.user.username, content: result.reply, isBot: true });
-    const allMemories = mergeMemories(extractExplicitMemories(content), result.memories);
+
+    const shouldSaveAiMemories = !isMemoryForgetRequest(content);
+    const allMemories = mergeMemories(extractExplicitMemories(content), shouldSaveAiMemories ? result.memories : []);
     if (allMemories.length) await saveMemories(config.guildId, message.author.id, allMemories);
   } catch (error) {
     if (isProviderRateLimitError(error)) {
@@ -351,7 +382,11 @@ async function handleSemiMessage(message, content) {
 
   const history = await getRecentMessages(config.guildId, message.channelId, config.maxContextMessages);
   try {
-    const shouldReply = await decideSpontaneousReplyWithFallback({ user: { username: message.member?.displayName || message.author.username, id: message.author.id }, content, history });
+    const shouldReply = await decideSpontaneousReplyWithFallback({
+      user: { username: message.member?.displayName || message.author.username, id: message.author.id },
+      content,
+      history
+    });
     if (!shouldReply) return;
     spontaneousCooldowns.set(message.channelId, now);
     await respondToMessage(message, 'semi');
@@ -376,7 +411,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.guildId !== config.guildId) return;
     await handleTicTacToeInteraction(interaction);
   } catch (error) {
-    console.error('Tic-Tac-Toe interaction error:', error);
+    console.error('Game interaction error:', error);
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       try { await interaction.reply({ content: '⚠️ Something went wrong with the game.', ephemeral: true }); } catch {}
     }
@@ -407,7 +442,10 @@ client.on('messageCreate', async (message) => {
       await queueForChannel(message.channelId, () => respondToMessage(message, 'main'));
       return;
     }
-    if (mode === 'semi') await queueForChannel(message.channelId, () => handleSemiMessage(message, content));
+
+    if (mode === 'semi') {
+      await queueForChannel(message.channelId, () => handleSemiMessage(message, content));
+    }
   } catch (error) {
     console.error('Message handler error:', error);
     if (message.guildId === config.guildId && !message.author.bot && message.content.length < 2000) {
