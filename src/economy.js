@@ -6,6 +6,11 @@ export const DAILY_MAX = 50;
 export const DEFAULT_BET = 10;
 export const MAX_BET = 200;
 
+export function formatEls(amount) {
+  const value = Number(amount) || 0;
+  return `${value} el${value === 1 ? '' : 's'}`;
+}
+
 export function parseBet(content) {
   const match = String(content || '').match(/(?:bet|wager|stake)\s*(?:of\s*)?(\d+)\s*(?:els?|coins?)?|(?:\b(\d+)\s*(?:els?|el)\b)/i);
   const value = Number(match?.[1] || match?.[2]);
@@ -46,7 +51,7 @@ export function isDailyRequest(content) {
 }
 
 export function isBalanceRequest(content) {
-  return /\b(?:how much|what(?:'s| is))\b[\s\S]{0,40}\b(?:els?|money|balance|coins?)\b/i.test(content)
+  return /\b(?:how much|how many|what(?:'s| is))\b[\s\S]{0,40}\b(?:els?|money|balance|coins?)\b/i.test(content)
     || /\b(?:my|check|show)\b[\s\S]{0,30}\b(?:els?|balance|money|coins?)\b/i.test(content);
 }
 
@@ -59,13 +64,13 @@ export async function handleEconomyRequest(message, content) {
       await message.reply(`💰 You already claimed your daily els. Come back in **${hours}h ${minutes}m**.`);
       return true;
     }
-    await message.reply(`💰 You got **${result.amount} el${result.amount === 1 ? '' : 's'}**! Your balance is now **${result.balance} els**.`);
+    await message.reply(`💰 You got **${formatEls(result.amount)}**! Your balance is now **${formatEls(result.balance)}**.`);
     return true;
   }
 
   if (isBalanceRequest(content)) {
     const balance = await getBalance(config.guildId, message.author.id);
-    await message.reply(`💰 You have **${balance} els**.`);
+    await message.reply(`💰 You have **${formatEls(balance)}**.`);
     return true;
   }
 
