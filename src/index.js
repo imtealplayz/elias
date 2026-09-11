@@ -18,6 +18,7 @@ import {
 } from './groq-fallback.js';
 import { summarizeMessages } from './summarize.js';
 import { handleCommand } from './commands.js';
+import { handleTicTacToeInteraction, isTicTacToeRequest, startTicTacToe } from './games/tictactoe.js';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -335,6 +336,10 @@ async function handleSemiMessage(message, content) {
 
   if (directlyAddressed) {
     if (await handleSummaryRequest(message, content)) return;
+    if (isTicTacToeRequest(content)) {
+      await startTicTacToe(message);
+      return;
+    }
     await respondToMessage(message, 'semi');
     return;
   }
@@ -366,6 +371,18 @@ client.once('ready', () => {
   console.log(`Fallback model: ${config.groqModel}`);
 });
 
+client.on('interactionCreate', async (interaction) => {
+  try {
+    if (interaction.guildId !== config.guildId) return;
+    await handleTicTacToeInteraction(interaction);
+  } catch (error) {
+    console.error('Tic-Tac-Toe interaction error:', error);
+    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+      try { await interaction.reply({ content: '⚠️ Something went wrong with the game.', ephemeral: true }); } catch {}
+    }
+  }
+});
+
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot) return;
@@ -383,6 +400,10 @@ client.on('messageCreate', async (message) => {
 
     if (mode === 'main') {
       if (await handleSummaryRequest(message, content)) return;
+      if (isTicTacToeRequest(content)) {
+        await startTicTacToe(message);
+        return;
+      }
       await queueForChannel(message.channelId, () => respondToMessage(message, 'main'));
       return;
     }
