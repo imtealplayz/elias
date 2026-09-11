@@ -18,9 +18,7 @@ function winner(board) {
   ];
 
   for (const [a, b, c] of lines) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-      return board[a];
-    }
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
   }
 
   return board.every(Boolean) ? 'draw' : null;
@@ -57,7 +55,9 @@ function buttonsFor(game, disabled = false) {
 
 function statusFor(game) {
   if (game.finished) return game.result;
-  return game.turn === 'bot' ? '🤖 **@Elias\'s turn!**' : `<@${game.userId}> **turn!**`;
+  return game.turn === 'bot'
+    ? `<@${game.botId}> **turn!**`
+    : `<@${game.userId}> **turn!**`;
 }
 
 function evaluate(board, botMark, playerMark) {
@@ -126,7 +126,7 @@ async function render(game, message) {
   await message.edit({
     content: boardText(game, statusFor(game)),
     components: buttonsFor(game, game.finished),
-    allowedMentions: { users: [game.userId] }
+    allowedMentions: { users: [game.userId, game.botId] }
   });
 }
 
@@ -138,11 +138,8 @@ async function makeBotMove(game, message) {
 
   game.board[move] = game.botMark;
   const result = winner(game.board);
-  if (result) {
-    finishGame(game, result);
-  } else {
-    game.turn = 'player';
-  }
+  if (result) finishGame(game, result);
+  else game.turn = 'player';
 
   await render(game, message);
 }
@@ -164,6 +161,7 @@ export async function startTicTacToe(message) {
     id: `${message.channelId}-${message.author.id}-${Date.now()}`,
     channelId: message.channelId,
     userId: message.author.id,
+    botId: message.client.user.id,
     board: Array(9).fill(null),
     playerMark: botStarts ? O : X,
     botMark: botStarts ? X : O,
@@ -177,7 +175,7 @@ export async function startTicTacToe(message) {
   const gameMessage = await message.reply({
     content: boardText(game, statusFor(game)),
     components: buttonsFor(game),
-    allowedMentions: { repliedUser: false, users: [message.author.id] }
+    allowedMentions: { repliedUser: false, users: [message.author.id, game.botId] }
   });
 
   if (botStarts) {
@@ -197,9 +195,7 @@ export async function handleTicTacToeInteraction(interaction) {
 
   await interaction.deferUpdate();
 
-  if (!game || game.finished) {
-    return true;
-  }
+  if (!game || game.finished) return true;
 
   if (interaction.user.id !== game.userId) {
     await interaction.followUp({ content: 'This isn\'t your game 😭', ephemeral: true });
@@ -211,9 +207,7 @@ export async function handleTicTacToeInteraction(interaction) {
     return true;
   }
 
-  if (!Number.isInteger(index) || index < 0 || index > 8 || game.board[index]) {
-    return true;
-  }
+  if (!Number.isInteger(index) || index < 0 || index > 8 || game.board[index]) return true;
 
   game.board[index] = game.playerMark;
   const result = winner(game.board);
@@ -223,7 +217,7 @@ export async function handleTicTacToeInteraction(interaction) {
     await interaction.message.edit({
       content: boardText(game, statusFor(game)),
       components: buttonsFor(game, true),
-      allowedMentions: { users: [game.userId] }
+      allowedMentions: { users: [game.userId, game.botId] }
     });
     return true;
   }
@@ -232,7 +226,7 @@ export async function handleTicTacToeInteraction(interaction) {
   await interaction.message.edit({
     content: boardText(game, statusFor(game)),
     components: buttonsFor(game),
-    allowedMentions: { users: [game.userId] }
+    allowedMentions: { users: [game.userId, game.botId] }
   });
 
   await new Promise((resolve) => setTimeout(resolve, 650));
