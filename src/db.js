@@ -16,76 +16,46 @@ async function request(table, { method = 'GET', query = '', body, prefer } = {})
 
   const text = await response.text();
   let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
 
   if (!response.ok) {
     const detail = typeof data === 'string' ? data : JSON.stringify(data);
     throw new Error(`Supabase ${method} ${table} failed (${response.status}): ${detail}`);
   }
-
   return data;
 }
 
-function encode(value) {
-  return encodeURIComponent(value);
-}
+function encode(value) { return encodeURIComponent(value); }
 
 function normalizeMemory(value) {
-  return String(value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 export async function getChannelMode(guildId, channelId) {
-  const rows = await request('channels', {
-    query: `?select=mode&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&limit=1`
-  });
-
+  const rows = await request('channels', { query: `?select=mode&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&limit=1` });
   return rows?.[0]?.mode || null;
 }
 
 export async function listChannelModes(guildId) {
-  return request('channels', {
-    query: `?select=channel_id,mode&guild_id=eq.${encode(guildId)}&order=mode.asc`
-  });
+  return request('channels', { query: `?select=channel_id,mode&guild_id=eq.${encode(guildId)}&order=mode.asc` });
 }
 
 export async function setChannelMode(guildId, channelId, mode) {
   return request('channels', {
-    method: 'POST',
-    query: '?on_conflict=channel_id',
-    body: [{
-      guild_id: guildId,
-      channel_id: channelId,
-      mode,
-      updated_at: new Date().toISOString()
-    }],
+    method: 'POST', query: '?on_conflict=channel_id',
+    body: [{ guild_id: guildId, channel_id: channelId, mode, updated_at: new Date().toISOString() }],
     prefer: 'resolution=merge-duplicates,return=minimal'
   });
 }
 
 export async function removeChannelMode(guildId, channelId) {
-  return request('channels', {
-    method: 'DELETE',
-    query: `?guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}`
-  });
+  return request('channels', { method: 'DELETE', query: `?guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}` });
 }
 
 export async function upsertUser(user) {
   return request('users', {
-    method: 'POST',
-    query: '?on_conflict=discord_id',
-    body: [{
-      discord_id: user.id,
-      username: user.username,
-      display_name: user.displayName || user.username,
-      updated_at: new Date().toISOString()
-    }],
+    method: 'POST', query: '?on_conflict=discord_id',
+    body: [{ discord_id: user.id, username: user.username, display_name: user.displayName || user.username, updated_at: new Date().toISOString() }],
     prefer: 'resolution=merge-duplicates,return=minimal'
   });
 }
@@ -93,78 +63,85 @@ export async function upsertUser(user) {
 export async function saveMessage({ guildId, channelId, userId, username, content, isBot = false }) {
   return request('messages', {
     method: 'POST',
-    body: [{
-      guild_id: guildId,
-      channel_id: channelId,
-      discord_id: userId,
-      username,
-      content,
-      is_bot: Boolean(isBot)
-    }],
+    body: [{ guild_id: guildId, channel_id: channelId, discord_id: userId, username, content, is_bot: Boolean(isBot) }],
     prefer: 'return=minimal'
   });
 }
 
 export async function getRecentMessages(guildId, channelId, limit) {
-  const rows = await request('messages', {
-    query: `?select=discord_id,username,content,is_bot,created_at&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&order=created_at.desc&limit=${Math.max(1, Number(limit) || 18)}`
-  });
-
+  const rows = await request('messages', { query: `?select=discord_id,username,content,is_bot,created_at&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&order=created_at.desc&limit=${Math.max(1, Number(limit) || 18)}` });
   return (rows || []).reverse();
 }
 
 export async function getUserMemories(guildId, discordId, limit) {
-  return request('memories', {
-    query: `?select=id,memory,importance,created_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&order=importance.desc,updated_at.desc&limit=${Math.max(1, Number(limit) || 12)}`
-  });
+  return request('memories', { query: `?select=id,memory,importance,created_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&order=importance.desc,updated_at.desc&limit=${Math.max(1, Number(limit) || 12)}` });
 }
 
 export async function saveMemories(guildId, discordId, memories) {
   if (!memories?.length) return;
-
   const existing = await getUserMemories(guildId, discordId, 100);
   const existingKeys = new Set((existing || []).map((item) => normalizeMemory(item.memory)));
   const newKeys = new Set();
-
   const rows = memories
     .filter((item) => typeof item?.memory === 'string' && item.memory.trim())
-    .map((item) => ({
-      guild_id: guildId,
-      discord_id: discordId,
-      memory: item.memory.trim().replace(/\s+/g, ' ').slice(0, 500),
-      importance: Math.min(1, Math.max(0, Number(item.importance) || 0.5))
-    }))
+    .map((item) => ({ guild_id: guildId, discord_id: discordId, memory: item.memory.trim().replace(/\s+/g, ' ').slice(0, 500), importance: Math.min(1, Math.max(0, Number(item.importance) || 0.5)) }))
     .filter((item) => {
       const key = normalizeMemory(item.memory);
       if (!key || existingKeys.has(key) || newKeys.has(key)) return false;
-      newKeys.add(key);
-      return true;
+      newKeys.add(key); return true;
     });
-
   if (!rows.length) return;
-  return request('memories', {
-    method: 'POST',
-    body: rows,
-    prefer: 'return=minimal'
-  });
+  return request('memories', { method: 'POST', body: rows, prefer: 'return=minimal' });
 }
 
 export async function deleteMemoryIds(guildId, discordId, ids) {
   const uniqueIds = [...new Set((ids || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
   if (!uniqueIds.length) return 0;
-
-  const deleted = await request('memories', {
-    method: 'DELETE',
-    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&id=in.(${uniqueIds.join(',')})`,
-    prefer: 'return=representation'
-  });
-
+  const deleted = await request('memories', { method: 'DELETE', query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&id=in.(${uniqueIds.join(',')})`, prefer: 'return=representation' });
   return Array.isArray(deleted) ? deleted.length : 0;
 }
 
 export async function deleteUserMemories(guildId, discordId) {
-  return request('memories', {
-    method: 'DELETE',
-    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}`
+  return request('memories', { method: 'DELETE', query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}` });
+}
+
+export async function getEconomyUser(guildId, discordId) {
+  const rows = await request('economy_users', { query: `?select=balance,last_daily_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&limit=1` });
+  if (rows?.[0]) return rows[0];
+  const created = await request('economy_users', {
+    method: 'POST',
+    body: [{ guild_id: guildId, discord_id: discordId, balance: 0 }],
+    prefer: 'return=representation'
   });
+  return created?.[0] || { balance: 0, last_daily_at: null };
+}
+
+export async function changeEls(guildId, discordId, amount) {
+  const current = await getEconomyUser(guildId, discordId);
+  const nextBalance = Number(current.balance || 0) + Math.floor(Number(amount) || 0);
+  if (nextBalance < 0) throw new Error('Insufficient els');
+  const rows = await request('economy_users', {
+    method: 'PATCH',
+    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}`,
+    body: { balance: nextBalance, updated_at: new Date().toISOString() },
+    prefer: 'return=representation'
+  });
+  return Number(rows?.[0]?.balance ?? nextBalance);
+}
+
+export async function claimDailyEls(guildId, discordId, amount) {
+  const current = await getEconomyUser(guildId, discordId);
+  const last = current.last_daily_at ? new Date(current.last_daily_at).getTime() : 0;
+  const now = Date.now();
+  const remainingMs = Math.max(0, 24 * 60 * 60 * 1000 - (now - last));
+  if (remainingMs > 0) return { claimed: false, remainingMs, balance: Number(current.balance || 0) };
+
+  const newBalance = Number(current.balance || 0) + Math.floor(Number(amount) || 0);
+  const rows = await request('economy_users', {
+    method: 'PATCH',
+    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}`,
+    body: { balance: newBalance, last_daily_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    prefer: 'return=representation'
+  });
+  return { claimed: true, amount: Math.floor(Number(amount) || 0), balance: Number(rows?.[0]?.balance ?? newBalance) };
 }
