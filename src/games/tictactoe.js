@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle
 } from 'discord.js';
+import { handleBlackjackInteraction, isBlackjackRequest, startBlackjack } from './blackjack.js';
 
 const games = new Map();
 
@@ -14,11 +15,11 @@ function winner(board) {
   const lines = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8],
     [0, 3, 6], [1, 4, 7], [2, 5, 8],
-    [0, 4, 8], [2, 4, 6]
+    [0, 4, 8], [2, 5, 6]
   ];
 
   for (const [a, b, c] of lines) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+    if (board[a] && board[a] === board[b] && board[a] === board[b] && board[a] === board[c]) return board[a];
   }
 
   return board.every(Boolean) ? 'draw' : null;
@@ -146,10 +147,15 @@ async function makeBotMove(game, message) {
 
 export function isTicTacToeRequest(content) {
   return /\b(?:play|start|let'?s\s+play|wanna\s+play)\b[\s\S]{0,80}\b(?:tic[ -]?tac[ -]?toe|ttt)\b/i.test(content)
-    || /\b(?:tic[ -]?tac[ -]?toe|ttt)\b[\s\S]{0,30}\b(?:play|game)\b/i.test(content);
+    || /\b(?:tic[ -]?tac[ -]?toe|ttt)\b[\s\S]{0,30}\b(?:play|game)\b/i.test(content)
+    || isBlackjackRequest(content);
 }
 
 export async function startTicTacToe(message) {
+  const content = message.content.replace(new RegExp(`<@!?${message.client.user.id}>`, 'g'), '').trim();
+
+  if (isBlackjackRequest(content)) return startBlackjack(message);
+
   const existing = [...games.values()].find((game) => game.userId === message.author.id && game.channelId === message.channelId && !game.finished);
   if (existing) {
     await message.reply({ content: 'We already have a game going here 😭 Finish that one first.', allowedMentions: { repliedUser: false } });
@@ -187,6 +193,7 @@ export async function startTicTacToe(message) {
 }
 
 export async function handleTicTacToeInteraction(interaction) {
+  if (await handleBlackjackInteraction(interaction)) return true;
   if (!interaction.isButton() || !interaction.customId.startsWith('ttt:')) return false;
 
   const [, gameId, indexText] = interaction.customId.split(':');
