@@ -135,10 +135,13 @@ function mergeMemories(...groups) {
 }
 
 function isCreatorRequest(content) {
-  return /\b(?:who|what)\b[\s\S]{0,60}\b(?:created|made|built|developed|creator|developer|author)\b[\s\S]{0,40}\b(?:you|you're|your)\b/i.test(content)
-    || /\bwho(?:'s| is)\s+(?:your|the)\s+(?:creator|developer|maker|author)\b/i.test(content)
-    || /\bwho\s+(?:made|created|built|developed)\s+you\b/i.test(content)
-    || /\bwho\s+are\s+you\s+(?:made|created|built)\s+by\b/i.test(content);
+  const text = String(content || '').trim();
+  return /\b(?:who|what)\b[\s\S]{0,60}\b(?:created|made|built|coded|programmed|developed|creator|developer|maker|author)\b[\s\S]{0,40}\b(?:you|u|you're|ur|your)\b/i.test(text)
+    || /\bwho(?:'s| is)\s+(?:your|the)\s+(?:creator|developer|maker|author|person)\b/i.test(text)
+    || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:you|u)\b/i.test(text)
+    || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:this|elias)\b/i.test(text)
+    || /\bwho\s+are\s+you\s+(?:made|created|built|coded|programmed)\s+by\b/i.test(text)
+    || /\bwho\s+(?:made|created|built|coded|programmed)\s+(?:ur|your)\s+(?:bot|ai|assistant)\b/i.test(text);
 }
 
 function isMemoryForgetRequest(content) {
