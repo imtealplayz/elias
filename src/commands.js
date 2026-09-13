@@ -8,6 +8,7 @@ import {
   getUserMemories,
   deleteUserMemories
 } from './db.js';
+import { getUserAfk, setUserAfk } from './afk.js';
 
 function targetChannel(message) {
   return message.mentions.channels.first() || message.channel;
@@ -32,6 +33,7 @@ function helpText() {
     `${code(`${config.prefix}block [#channel]`)} — make a channel completely silent`,
     `${code(`${config.prefix}unblock [#channel]`)} — remove BLOCKED mode`,
     `${code(`${config.prefix}channels`)} — show configured channels`,
+    `${code(`${config.prefix}afk [reason]`)} — set your AFK status`,
     `${code(`${config.prefix}memory`)} — DM your stored memories`,
     `${code(`${config.prefix}forget`)} — delete all of your stored memories`,
     `${code(`${config.prefix}help`)} — show this help`
@@ -53,6 +55,27 @@ export async function handleCommand(message) {
   const name = command?.toLowerCase();
 
   if (!name) return true;
+
+  if (name === 'afk') {
+    const reason = body.slice(command.length).trim().replace(/^[,!:;\-\s]+/, '').trim().slice(0, 200) || null;
+    const existing = await getUserAfk(config.guildId, message.author.id);
+
+    if (existing) {
+      await message.reply({
+        content: `💤 You're already AFK${existing.reason ? ` for **${existing.reason}**` : ''}. Send a normal message when you're back.`,
+        allowedMentions: { repliedUser: false }
+      });
+      return true;
+    }
+
+    const reply = await setUserAfk({ guildId: config.guildId, user: message.author, reason });
+    if (reply) {
+      await message.reply({ content: reply, allowedMentions: { repliedUser: false } });
+    } else {
+      await message.reply({ content: '❌ I couldn\'t set your AFK status. Try again in a moment.', allowedMentions: { repliedUser: false } });
+    }
+    return true;
+  }
 
   if (Object.hasOwn(commandModes, name)) {
     if (!isAdmin(message)) {
