@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from './config.js';
+import { formatCurrencyReply, getCurrencyConversion, parseCurrencyRequest } from './currency.js';
 
 const gemini = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
@@ -220,6 +221,22 @@ const REPLY_SCHEMA = {
 };
 
 export async function generateReply({ user, content, history, memories, mode }) {
+  const currencyRequest = parseCurrencyRequest(content);
+  if (currencyRequest) {
+    try {
+      const conversion = await getCurrencyConversion(content);
+      if (conversion) {
+        return { reply: formatCurrencyReply(conversion), memories: [] };
+      }
+    } catch (error) {
+      console.error('Currency lookup failed:', error?.message || error);
+      return {
+        reply: "I couldn't fetch the latest exchange rate right now. Try again in a moment.",
+        memories: []
+      };
+    }
+  }
+
   const memoryText = memories.length
     ? memories.map((m) => `- ${m.memory}`).join('\n')
     : '- No stored memories.';
