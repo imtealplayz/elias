@@ -1,6 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from './config.js';
 import { formatCurrencyReply, getCurrencyConversion, parseCurrencyRequest } from './currency.js';
+import { formatCryptoReply, getCryptoConversion, parseCryptoRequest } from './crypto.js';
+import { handleReminderRequest } from './reminder.js';
 
 const gemini = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
@@ -221,6 +223,16 @@ const REPLY_SCHEMA = {
 };
 
 export async function generateReply({ user, content, history, memories, mode }) {
+  const reminderReply = await handleReminderRequest({
+    content,
+    guildId: config.guildId,
+    userId: user.id
+  }).catch((error) => {
+    console.error('Reminder handling failed:', error?.message || error);
+    return null;
+  });
+  if (reminderReply) return { reply: reminderReply, memories: [] };
+
   const currencyRequest = parseCurrencyRequest(content);
   if (currencyRequest) {
     try {
@@ -232,6 +244,22 @@ export async function generateReply({ user, content, history, memories, mode }) 
       console.error('Currency lookup failed:', error?.message || error);
       return {
         reply: "I couldn't fetch the latest exchange rate right now. Try again in a moment.",
+        memories: []
+      };
+    }
+  }
+
+  const cryptoRequest = parseCryptoRequest(content);
+  if (cryptoRequest) {
+    try {
+      const conversion = await getCryptoConversion(content);
+      if (conversion) {
+        return { reply: formatCryptoReply(conversion), memories: [] };
+      }
+    } catch (error) {
+      console.error('Crypto lookup failed:', error?.message || error);
+      return {
+        reply: "I couldn't fetch the latest crypto price right now. Try again in a moment.",
         memories: []
       };
     }
