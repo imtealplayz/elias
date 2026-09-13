@@ -121,8 +121,8 @@ export function chooseReminder(reminders, target) {
 }
 
 export function formatReminderCreated(reminder) {
-  const when = new Intl.DateTimeFormat('en-IN', { timeZone: TIMEZONE, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(reminder.due_at || reminder.dueAt));
-  return `⏰ Got it — I'll remind you to **${reminder.task}** on ${when} IST.`;
+  const timestamp = Math.floor(new Date(reminder.due_at || reminder.dueAt).getTime() / 1000);
+  return `⏰ Got it — I'll remind you to **${reminder.task}** <t:${timestamp}:R> (<t:${timestamp}:f>).`;
 }
 
 export function formatReminderList(reminders) {
@@ -167,11 +167,55 @@ async function getOrCreateDm(userId) {
   return channel.id;
 }
 
+async function getServerChannelId(guildId) {
+  const guild = await discordApi(`/guilds/${guildId}`);
+  const channels = await discordApi(`/guilds/${guildId}/channels`);
+  const usable = Array.isArray(channels)
+    ? channels.filter((channel) => channel.type === 0 || channel.type === 5)
+    : [];
+
+  const systemChannel = usable.find((channel) => channel.id === guild.system_channel_id);
+  if (systemChannel) return systemChannel.id;
+
+  const general = usable.find((channel) => /^(general|chat|main)$/i.test(channel.name || ''));
+  if (general) return general.id;
+
+  return usable.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.id || null;
+}
+
 async function sendReminder(reminder) {
-  const channelId = await getOrCreateDm(reminder.discord_id);
-  await discordApi(`/channels/${channelId}/messages`, {
-    method: 'POST', body: JSON.stringify({ content: `⏰ **Reminder:** ${reminder.task}` })
-  });
+  let delivered = false;
+
+  try {
+    const dmChannelId = await getOrCreateDm(reminder.discord_id);
+    await discordApi(`/channels/${dmChannelId}/messages`, {
+      method: 'POST', body: JSON.stringify({ content: `⏰ **Reminder:** ${reminder.task}` })
+    });
+    delivered = true;
+  } catch (error) {
+    console.error(`Failed to DM reminder ${reminder.id}:`, error?.message || error);
+  }
+
+  try {
+    const serverChannelId = reminder.channel_id !== 'dm'
+      ? reminder.channel_id
+      : await getServerChannelId(reminder.guild_id);
+
+    if (!serverChannelId) throw new Error('No usable server text channel was found.');
+
+    await discordApi(`/channels/${serverChannelId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: `⏰ <@${reminder.discord_id}> **Reminder:** ${reminder.task}`,
+        allowed_mentions: { users: [reminder.discord_id] }
+      })
+    });
+    delivered = true;
+  } catch (error) {
+    console.error(`Failed to post server reminder ${reminder.id}:`, error?.message || error);
+  }
+
+  if (!delivered) throw new Error('Reminder could not be delivered to either Discord destination.');
 }
 
 export async function processDueReminders() {
