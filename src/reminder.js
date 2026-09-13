@@ -1,4 +1,8 @@
+import { config } from './config.js';
+import { createReminder, deleteReminder, getNextReminder, getPendingReminders, getUserReminders } from './db.js';
+
 const TIMEZONE = 'Asia/Kolkata';
+let schedulerTimer = null;
 
 function parseClock(value) {
   const match = String(value || '').match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
@@ -126,3 +130,76 @@ export function formatReminderList(reminders) {
   const formatter = new Intl.DateTimeFormat('en-IN', { timeZone: TIMEZONE, dateStyle: 'medium', timeStyle: 'short' });
   return `⏰ **Your pending reminders**\n${reminders.slice(0, 10).map((item, index) => `${index + 1}. **${item.task}** — ${formatter.format(new Date(item.due_at))} IST`).join('\n')}`;
 }
+
+export async function handleReminderRequest({ content, guildId, userId }) {
+  const create = parseReminderRequest(content);
+  if (create) {
+    const reminder = await createReminder({ guildId, discordId: userId, channelId: 'dm', task: create.task, dueAt: create.dueAt.toISOString() });
+    return reminder ? formatReminderCreated(reminder) : null;
+  }
+
+  const management = parseReminderQuestion(content);
+  if (!management) return null;
+
+  const reminders = await getUserReminders(guildId, userId, 10);
+  if (management.type === 'list') return formatReminderList(reminders);
+
+  const selected = chooseReminder(reminders, management.target);
+  if (!selected) return "I couldn't find a pending reminder matching that.";
+  await deleteReminder(selected.id);
+  return `✅ Cancelled your reminder: **${selected.task}**.`;
+}
+
+async function discordApi(path, options = {}) {
+  const response = await fetch(`https://discord.com/api/v10${path}`, {
+    ...options,
+    headers: { Authorization: `Bot ${config.token}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`Discord API ${response.status}: ${JSON.stringify(data)}`);
+  return data;
+}
+
+async function getOrCreateDm(userId) {
+  const channel = await discordApi('/users/@me/channels', {
+    method: 'POST', body: JSON.stringify({ recipient_id: userId })
+  });
+  return channel.id;
+}
+
+async function sendReminder(reminder) {
+  const channelId = await getOrCreateDm(reminder.discord_id);
+  await discordApi(`/channels/${channelId}/messages`, {
+    method: 'POST', body: JSON.stringify({ content: `⏰ **Reminder:** ${reminder.task}` })
+  });
+}
+
+export async function processDueReminders() {
+  const due = await getPendingReminders(new Date().toISOString(), 100);
+  for (const reminder of due) {
+    try {
+      await sendReminder(reminder);
+      await deleteReminder(reminder.id);
+    } catch (error) {
+      console.error(`Failed to deliver reminder ${reminder.id}:`, error?.message || error);
+      // Leave the row in Supabase so a transient Discord/API error can be retried.
+    }
+  }
+}
+
+export async function scheduleNextReminder() {
+  if (schedulerTimer) clearTimeout(schedulerTimer);
+  schedulerTimer = null;
+
+  await processDueReminders();
+  const next = await getNextReminder();
+  if (!next) return;
+
+  const delay = Math.max(1000, new Date(next.due_at).getTime() - Date.now());
+  schedulerTimer = setTimeout(() => {
+    scheduleNextReminder().catch((error) => console.error('Reminder scheduler error:', error));
+  }, delay);
+  schedulerTimer.unref?.();
+}
+
+scheduleNextReminder().catch((error) => console.error('Failed to start reminder scheduler:', error));
