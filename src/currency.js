@@ -53,7 +53,7 @@ const aliasPattern = aliasEntries
   .map(([alias]) => alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   .join('|');
 
-const currencyPattern = new RegExp(`(?:${aliasPattern}|\\$|€|£|₹|¥)`, 'gi');
+const currencyPattern = new RegExp(`(?:(?<![A-Za-z0-9_])(?:${aliasPattern})(?![A-Za-z0-9_])|\\$|€|£|₹|¥)`, 'gi');
 
 function normalizeCurrencyAlias(value) {
   const normalized = String(value || '').trim().toLowerCase();
