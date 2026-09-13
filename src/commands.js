@@ -33,7 +33,7 @@ function helpText() {
     `${code(`${config.prefix}block [#channel]`)} — make a channel completely silent`,
     `${code(`${config.prefix}unblock [#channel]`)} — remove BLOCKED mode`,
     `${code(`${config.prefix}channels`)} — show configured channels`,
-    `${code(`${config.prefix}afk [reason]`)} — set your AFK status`,
+    `${code('.afk [reason]')} — set your AFK status`,
     `${code(`${config.prefix}memory`)} — DM your stored memories`,
     `${code(`${config.prefix}forget`)} — delete all of your stored memories`,
     `${code(`${config.prefix}help`)} — show this help`
@@ -50,14 +50,21 @@ const commandModes = {
 };
 
 export async function handleCommand(message) {
-  const body = message.content.slice(config.prefix.length).trim();
+  const isAfkCommand = /^\.afk(?:\s|$)/i.test(message.content);
+  const body = isAfkCommand
+    ? message.content.slice(4).trim()
+    : message.content.slice(config.prefix.length).trim();
   const [command] = body.split(/\s+/);
-  const name = command?.toLowerCase();
+  const name = isAfkCommand ? 'afk' : command?.toLowerCase();
 
   if (!name) return true;
 
   if (name === 'afk') {
-    const reason = body.slice(command.length).trim().replace(/^[,!:;\-\s]+/, '').trim().slice(0, 200) || null;
+    const reason = (isAfkCommand ? body : body.slice(command.length))
+      .trim()
+      .replace(/^[,!:;\-\s]+/, '')
+      .trim()
+      .slice(0, 200) || null;
     const existing = await getUserAfk(config.guildId, message.author.id);
 
     if (existing) {
