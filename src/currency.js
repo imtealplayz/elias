@@ -104,15 +104,21 @@ export function parseCurrencyRequest(content) {
   const currencies = findCurrencies(text);
   if (currencies.length < 2) return null;
 
-  const first = currencies[0];
-  const second = currencies[1];
-  if (!first.code || !second.code) return null;
-  if (first.code === second.code) {
-    if (!looksLikeCurrencyRequest(text, first, second)) return null;
-    return { amount: parseAmount(text, first, second) ?? 1, from: first.code, to: second.code };
+  const connector = [...text.matchAll(/\b(?:to|into|in)\b/gi)][0];
+  let first = currencies[0];
+  let second = currencies[1];
+
+  if (connector) {
+    const connectorIndex = connector.index ?? -1;
+    const before = currencies.filter((currency) => currency.index < connectorIndex);
+    const after = currencies.filter((currency) => currency.index > connectorIndex);
+    if (before.length && after.length) {
+      first = before.at(-1);
+      second = after[0];
+    }
   }
 
-  if (!looksLikeCurrencyRequest(text, first, second)) return null;
+  if (!first?.code || !second?.code || !looksLikeCurrencyRequest(text, first, second)) return null;
 
   return {
     amount: parseAmount(text, first, second) ?? 1,
