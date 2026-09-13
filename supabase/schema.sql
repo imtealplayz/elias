@@ -53,6 +53,20 @@ create table if not exists public.reminders (
 create index if not exists reminders_due_idx on public.reminders(due_at);
 create index if not exists reminders_user_idx on public.reminders(guild_id, discord_id, due_at);
 
+create table if not exists public.afk_status (
+  guild_id text not null,
+  discord_id text not null,
+  username text not null,
+  display_name text not null,
+  reason text,
+  started_at timestamptz not null,
+  mention_count integer not null default 0,
+  pingers jsonb not null default '[]'::jsonb,
+  primary key (guild_id, discord_id)
+);
+
+create index if not exists afk_guild_idx on public.afk_status(guild_id);
+
 -- Safe migration for an existing Elias database.
 alter table public.messages
   add column if not exists is_bot boolean not null default false;
