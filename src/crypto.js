@@ -116,7 +116,7 @@ function parseAmount(text, firstAsset, secondAsset) {
 }
 
 function isCryptoIntent(text) {
-  return /\b(?:crypto|cryptocurrency|coin|token|price|worth|convert|conversion|exchange|how much|value|rate|rates|market)\b/i.test(text);
+  return /\b(?:crypto|cryptocurrency|price|worth|convert|conversion|exchange|how much|value|rate|rates|market|trading)\b/i.test(text);
 }
 
 export function parseCryptoRequest(content) {
