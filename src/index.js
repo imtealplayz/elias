@@ -141,7 +141,7 @@ function isCreatorRequest(content) {
     || /\bwho(?:'s| is)\s+(?:your|the)\s+(?:creator|developer|maker|author|person)\b/i.test(text)
     || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:you|u)\b/i.test(text)
     || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:this|elias)\b/i.test(text)
-    || /\bwho\s+are\s+you\s+(?:made|created|built|coded|programmed)\s+by\b/i.test(text)
+    || /\bwho\s+are\s+you\s+(?:made|created|built|programmed)\s+by\b/i.test(text)
     || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:ur|your)\s+(?:bot|ai|assistant)\b/i.test(text);
 }
 
@@ -314,46 +314,33 @@ async function respondToMessage(message, mode) {
     getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
   ]);
 
-  const explicitName = extractNamePreference(content);
-  let memoriesAfterForget = loadedMemories;
-  if (explicitName) {
-    const oldNameMemories = loadedMemories.filter((memory) => /^user prefers to be called\b/i.test(memory.memory));
-    if (oldNameMemories.length) {
-      await deleteMemoryIds(config.guildId, message.author.id, oldNameMemories.map((memory) => memory.id));
-      const deletedSet = new Set(oldNameMemories.map((memory) => Number(memory.id)));
-      memoriesAfterForget = loadedMemories.filter((memory) => !deletedSet.has(Number(memory.id)));
-    }
-  }
-
-  const forgetResult = await forgetRelevantMemories({
+  const explicitMemories = extractExplicitMemories(content);
+  const { deleted: deletedMemories, remainingMemories } = await forgetRelevantMemories({
     content,
-    memories: memoriesAfterForget,
+    memories: loadedMemories,
     history,
     guildId: config.guildId,
     discordId: message.author.id
   });
 
-  await upsertUser(message.author);
-  await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: message.author.id, username: message.member?.displayName || message.author.username, content, isBot: false });
+  const memoriesForPrompt = remainingMemories;
+  const user = {
+    id: message.author.id,
+    username: message.member?.displayName || message.author.username
+  };
 
+  let reply;
+  let memories;
   try {
-    const result = isCreatorRequest(content)
-      ? { reply: 'I was created by Teal.', memories: [] }
-      : await generateReplyWithFallback({
-          user: { username: message.member?.displayName || message.author.username, id: message.author.id },
-          content,
-          history,
-          memories: forgetResult.remainingMemories,
-          mode,
-          currentNamePreference: explicitName || null
-        });
-
-    await sendLongReply(message, result.reply);
-    await saveMessage({ guildId: message.guildId, channelId: message.channelId, userId: client.user.id, username: client.user.username, content: result.reply, isBot: true });
-
-    const shouldSaveAiMemories = !isMemoryForgetRequest(content);
-    const allMemories = mergeMemories(extractExplicitMemories(content), shouldSaveAiMemories ? result.memories : []);
-    if (allMemories.length) await saveMemories(config.guildId, message.author.id, allMemories);
+    ({ reply, memories } = await generateReplyWithFallback({
+      user,
+      content,
+      history,
+      memories: memoriesForPrompt,
+      mode,
+      botName: config.botName,
+      creator: 'Teal'
+    }));
   } catch (error) {
     if (isProviderRateLimitError(error)) {
       markAiRateLimited(error);
@@ -362,6 +349,34 @@ async function respondToMessage(message, mode) {
     }
     throw error;
   }
+
+  await sendLongReply(message, reply);
+
+  const mergedMemories = mergeMemories(explicitMemories, memories);
+  if (deletedMemories) console.log(`Memory update removed ${deletedMemories} item(s) before AI generation.`);
+  if (mergedMemories.length) await saveMemories(config.guildId, message.author.id, mergedMemories);
+
+  await upsertUser({
+    id: message.author.id,
+    username: message.author.username,
+    displayName: message.member?.displayName || message.author.username
+  });
+  await saveMessage({
+    guildId: config.guildId,
+    channelId: message.channelId,
+    userId: message.author.id,
+    username: message.member?.displayName || message.author.username,
+    content,
+    isBot: false
+  });
+  await saveMessage({
+    guildId: config.guildId,
+    channelId: message.channelId,
+    userId: client.user.id,
+    username: client.user.username,
+    content: reply,
+    isBot: true
+  });
 }
 
 async function handleSemiMessage(message, content) {
@@ -450,7 +465,7 @@ client.on('messageCreate', async (message) => {
     if (message.guild.id !== config.guildId) return;
     if (!markMessageProcessed(message.id)) return;
     if (await handleDiscordInvite(message)) return;
-    if (message.content.startsWith(config.prefix)) {
+    if (message.content.startsWith(config.prefix) || /^\.afk(?:\s|$)/i.test(message.content)) {
       await handleCommand(message);
       return;
     }
