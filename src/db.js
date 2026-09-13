@@ -104,3 +104,35 @@ export async function deleteMemoryIds(guildId, discordId, ids) {
 export async function deleteUserMemories(guildId, discordId) {
   return request('memories', { method: 'DELETE', query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}` });
 }
+
+export async function createReminder({ guildId, discordId, channelId, task, dueAt }) {
+  const rows = await request('reminders', {
+    method: 'POST',
+    body: [{ guild_id: guildId, discord_id: discordId, channel_id: channelId, task: String(task).trim().slice(0, 300), due_at: dueAt }],
+    prefer: 'return=representation'
+  });
+  return rows?.[0] || null;
+}
+
+export async function getUserReminders(guildId, discordId, limit = 10) {
+  return request('reminders', {
+    query: `?select=id,channel_id,task,due_at,created_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&due_at=gte.${encode(new Date().toISOString())}&order=due_at.asc&limit=${Math.max(1, Number(limit) || 10)}`
+  });
+}
+
+export async function deleteReminder(id) {
+  return request('reminders', { method: 'DELETE', query: `?id=eq.${encode(id)}` });
+}
+
+export async function getPendingReminders(now = new Date().toISOString(), limit = 100) {
+  return request('reminders', {
+    query: `?select=id,guild_id,discord_id,channel_id,task,due_at&due_at=lte.${encode(now)}&order=due_at.asc&limit=${Math.max(1, Number(limit) || 100)}`
+  });
+}
+
+export async function getNextReminder() {
+  const rows = await request('reminders', {
+    query: `?select=id,guild_id,discord_id,channel_id,task,due_at&order=due_at.asc&limit=1`
+  });
+  return rows?.[0] || null;
+}
