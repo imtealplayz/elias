@@ -135,7 +135,9 @@ export async function handleReminderRequest({ content, guildId, userId }) {
   const create = parseReminderRequest(content);
   if (create) {
     const reminder = await createReminder({ guildId, discordId: userId, channelId: 'dm', task: create.task, dueAt: create.dueAt.toISOString() });
-    return reminder ? formatReminderCreated(reminder) : null;
+    if (!reminder) return null;
+    scheduleNextReminder().catch((error) => console.error('Failed to schedule new reminder:', error?.message || error));
+    return formatReminderCreated(reminder);
   }
 
   const management = parseReminderQuestion(content);
@@ -147,6 +149,7 @@ export async function handleReminderRequest({ content, guildId, userId }) {
   const selected = chooseReminder(reminders, management.target);
   if (!selected) return "I couldn't find a pending reminder matching that.";
   await deleteReminder(selected.id);
+  scheduleNextReminder().catch((error) => console.error('Failed to reschedule after reminder cancellation:', error?.message || error));
   return `✅ Cancelled your reminder: **${selected.task}**.`;
 }
 
