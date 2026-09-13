@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
 import {
   deleteMemoryIds,
@@ -19,6 +19,7 @@ import {
 import { summarizeMessages } from './summarize.js';
 import { handleCommand } from './commands.js';
 import { handleTicTacToeInteraction, isTicTacToeRequest, startTicTacToe } from './games/tictactoe.js';
+import { containsDiscordInviteLink } from './link-filter.js';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -141,7 +142,7 @@ function isCreatorRequest(content) {
     || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:you|u)\b/i.test(text)
     || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:this|elias)\b/i.test(text)
     || /\bwho\s+are\s+you\s+(?:made|created|built|coded|programmed)\s+by\b/i.test(text)
-    || /\bwho\s+(?:made|created|built|coded|programmed)\s+(?:ur|your)\s+(?:bot|ai|assistant)\b/i.test(text);
+    || /\bwho\s+(?:made|created|built|coded|programmed|developed)\s+(?:ur|your)\s+(?:bot|ai|assistant)\b/i.test(text);
 }
 
 function isMemoryForgetRequest(content) {
@@ -402,6 +403,27 @@ async function handleSemiMessage(message, content) {
   }
 }
 
+async function handleDiscordInvite(message) {
+  if (!containsDiscordInviteLink(message.content)) return false;
+  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) return false;
+
+  try {
+    await message.delete();
+  } catch (error) {
+    console.warn(`Failed to delete Discord invite from ${message.author.id}:`, error?.message || error);
+  }
+
+  try {
+    await message.channel.send({
+      content: '🔗 Links are not allowed! Only admins can send Discord invite links.',
+      allowedMentions: { parse: [] }
+    });
+  } catch (error) {
+    console.warn(`Failed to send link warning in ${message.channelId}:`, error?.message || error);
+  }
+  return true;
+}
+
 client.once('ready', () => {
   console.log(`✅ ${client.user.tag} is online.`);
   console.log(`Guild lock: ${config.guildId}`);
@@ -427,6 +449,7 @@ client.on('messageCreate', async (message) => {
     if (!message.guild) return;
     if (message.guild.id !== config.guildId) return;
     if (!markMessageProcessed(message.id)) return;
+    if (await handleDiscordInvite(message)) return;
     if (message.content.startsWith(config.prefix)) {
       await handleCommand(message);
       return;
