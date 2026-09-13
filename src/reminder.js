@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { createReminder, deleteReminder, getNextReminder, getPendingReminders, getUserReminders } from './db.js';
+import { getLastMessageChannel } from './afk-runtime.js';
 
 const TIMEZONE = 'Asia/Kolkata';
 let schedulerTimer = null;
@@ -134,7 +135,8 @@ export function formatReminderList(reminders) {
 export async function handleReminderRequest({ content, guildId, userId }) {
   const create = parseReminderRequest(content);
   if (create) {
-    const reminder = await createReminder({ guildId, discordId: userId, channelId: 'dm', task: create.task, dueAt: create.dueAt.toISOString() });
+    const channelId = getLastMessageChannel(guildId, userId) || 'dm';
+    const reminder = await createReminder({ guildId, discordId: userId, channelId, task: create.task, dueAt: create.dueAt.toISOString() });
     if (!reminder) return null;
     scheduleNextReminder().catch((error) => console.error('Failed to schedule new reminder:', error?.message || error));
     return formatReminderCreated(reminder);
@@ -229,7 +231,6 @@ export async function processDueReminders() {
       await deleteReminder(reminder.id);
     } catch (error) {
       console.error(`Failed to deliver reminder ${reminder.id}:`, error?.message || error);
-      // Leave the row in Supabase so a transient Discord/API error can be retried.
     }
   }
 }
