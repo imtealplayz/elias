@@ -15,6 +15,7 @@ A private, conversational Discord AI bot built with Node.js, discord.js, Groq, S
 - `!forget` deletes a user's stored memories
 - Recent channel conversation context
 - Groq JSON responses for reply + memory extraction
+- Live currency conversion using the latest available exchange rate
 - Per-channel queueing and spontaneous-response cooldowns
 - No secrets committed to the repository
 
@@ -28,6 +29,8 @@ A private, conversational Discord AI bot built with Node.js, discord.js, Groq, S
 6. Run `npm install` and `npm start`.
 
 Supabase is used only from the server-side bot. The secret key must never be exposed to a browser or committed to Git.
+
+Currency conversion uses the public Frankfurter v2 API, so no additional API key or environment variable is required. Elias fetches the latest available rate for the requested currency pair and performs the conversion locally. Rates are published daily on working days, so the returned date identifies the rate used.
 
 ## Commands
 
