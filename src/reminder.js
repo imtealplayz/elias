@@ -201,23 +201,19 @@ async function sendReminder(reminder) {
     console.error(`Failed to DM reminder ${reminder.id}:`, error?.message || error);
   }
 
-  try {
-    const serverChannelId = reminder.channel_id !== 'dm'
-      ? reminder.channel_id
-      : await getServerChannelId(reminder.guild_id);
-
-    if (!serverChannelId) throw new Error('No usable server text channel was found.');
-
-    await discordApi(`/channels/${serverChannelId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({
-        content: `⏰ <@${reminder.discord_id}> **Reminder:** ${reminder.task}`,
-        allowed_mentions: { users: [reminder.discord_id] }
-      })
-    });
-    delivered = true;
-  } catch (error) {
-    console.error(`Failed to post server reminder ${reminder.id}:`, error?.message || error);
+  if (reminder.channel_id !== 'dm') {
+    try {
+      await discordApi(`/channels/${reminder.channel_id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          content: `⏰ <@${reminder.discord_id}> **Reminder:** ${reminder.task}`,
+          allowed_mentions: { users: [reminder.discord_id] }
+        })
+      });
+      delivered = true;
+    } catch (error) {
+      console.error(`Failed to post server reminder ${reminder.id}:`, error?.message || error);
+    }
   }
 
   if (!delivered) throw new Error('Reminder could not be delivered to either Discord destination.');
