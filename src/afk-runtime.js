@@ -23,6 +23,12 @@ async function sendChannelMessage(message, content) {
   }
 }
 
+function isAfkCommand(content) {
+  const prefix = String(config.prefix || '.');
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escapedPrefix}afk(?:\\s|$)`, 'i').test(String(content || '').trim());
+}
+
 if (!Client.prototype[PATCH_MARKER]) {
   const originalOn = Client.prototype.on;
 
@@ -54,7 +60,7 @@ if (!Client.prototype[PATCH_MARKER]) {
         }
 
         const currentAfk = await getUserAfk(guildId, userId);
-        if (currentAfk) {
+        if (currentAfk && !isAfkCommand(message.content)) {
           const ended = await endUserAfk({ guildId, discordId: userId });
           if (ended) await sendChannelMessage(message, ended.message);
         }
