@@ -136,3 +136,52 @@ export async function getNextReminder() {
   });
   return rows?.[0] || null;
 }
+
+export async function createAfk({ guildId, discordId, username, displayName, reason, startedAt }) {
+  const rows = await request('afk_status', {
+    method: 'POST',
+    query: '?on_conflict=guild_id,discord_id',
+    body: [{ guild_id: guildId, discord_id: discordId, username, display_name: displayName, reason: reason || null, started_at: startedAt, mention_count: 0, pingers: [] }],
+    prefer: 'resolution=merge-duplicates,return=representation'
+  });
+  return rows?.[0] || null;
+}
+
+export async function getAfk(guildId, discordId) {
+  const rows = await request('afk_status', {
+    query: `?select=guild_id,discord_id,username,display_name,reason,started_at,mention_count,pingers&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&limit=1`
+  });
+  return rows?.[0] || null;
+}
+
+export async function recordAfkPing(guildId, discordId, pinger) {
+  const afk = await getAfk(guildId, discordId);
+  if (!afk) return null;
+
+  const pingers = Array.isArray(afk.pingers) ? [...afk.pingers] : [];
+  const existing = pingers.find((entry) => entry.user_id === pinger.userId);
+  if (existing) {
+    existing.count = Number(existing.count) + 1;
+    existing.username = pinger.username;
+    existing.display_name = pinger.displayName;
+  } else {
+    pingers.push({ user_id: pinger.userId, username: pinger.username, display_name: pinger.displayName, count: 1 });
+  }
+
+  const rows = await request('afk_status', {
+    method: 'PATCH',
+    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}`,
+    body: { mention_count: Number(afk.mention_count) + 1, pingers },
+    prefer: 'return=representation'
+  });
+  return rows?.[0] || null;
+}
+
+export async function removeAfk(guildId, discordId) {
+  const rows = await request('afk_status', {
+    method: 'DELETE',
+    query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}`,
+    prefer: 'return=representation'
+  });
+  return rows?.[0] || null;
+}
