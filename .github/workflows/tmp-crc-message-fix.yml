@@ -22,7 +22,7 @@ jobs:
           from pathlib import Path
           path = Path('src/commands.js')
           text = path.read_text()
-          old = "I can't see you watching anything on Crunchyroll right now, and I don't have a previous watch saved."
+          old = "I can\\'t see you watching anything on Crunchyroll right now, and I don\\'t have a previous watch saved."
           new = "You need to watch something first, then use .crc or /crc so I can save your watch history."
           if old not in text:
               raise SystemExit('Target message was not found')
