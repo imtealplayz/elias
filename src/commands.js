@@ -1,4 +1,4 @@
-import { PermissionFlagsBits } from 'discord.js';
+import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
 import {
   getChannelMode,
@@ -34,6 +34,7 @@ function helpText() {
     `${code(`${config.prefix}unblock [#channel]`)} — remove BLOCKED mode`,
     `${code(`${config.prefix}channels`)} — show configured channels`,
     `${code('.afk [reason]')} — set your AFK status`,
+    `${code('.cc')} — show what you're currently watching on Crunchyroll`,
     `${code(`${config.prefix}memory`)} — DM your stored memories`,
     `${code(`${config.prefix}forget`)} — delete all of your stored memories`,
     `${code(`${config.prefix}help`)} — show this help`
@@ -49,15 +50,91 @@ const commandModes = {
   unblock: 'blocked'
 };
 
+function getCrunchyrollActivity(message) {
+  const activities = message.member?.presence?.activities || [];
+
+  return activities.find((activity) => {
+    const name = String(activity.name || '').toLowerCase();
+    const details = String(activity.details || '').toLowerCase();
+    const state = String(activity.state || '').toLowerCase();
+    const url = String(activity.url || '').toLowerCase();
+
+    return name === 'crunchyroll' ||
+      name.includes('crunchyroll') ||
+      details.includes('crunchyroll') ||
+      state.includes('crunchyroll') ||
+      url.includes('crunchyroll.com');
+  });
+}
+
+function parseWatchInfo(activity) {
+  const values = [activity?.details, activity?.state, activity?.name].filter(Boolean).map(String);
+  const combined = values.join(' • ');
+
+  const seasonMatch = combined.match(/\bseason\s*(\d+)\b/i) || combined.match(/\bs(\d+)\b/i);
+  const episodeMatch = combined.match(/\bepisode\s*(\d+)\b/i) || combined.match(/\bep\.?\s*(\d+)\b/i) || combined.match(/\bep(\d+)\b/i);
+
+  const season = seasonMatch?.[1] || null;
+  const episode = episodeMatch?.[1] || null;
+
+  let title = activity?.details || activity?.name || 'Unknown anime';
+  title = String(title)
+    .replace(/\s*[•|·]\s*(?:season|s)\s*\d+\s*[•|·-]?\s*(?:episode|ep)\s*\d+.*$/i, '')
+    .replace(/^watching\s+/i, '')
+    .trim();
+
+  return { title, season, episode };
+}
+
+async function handleCurrentlyWatching(message) {
+  const activity = getCrunchyrollActivity(message);
+
+  if (!activity) {
+    await message.reply({
+      content: '📺 I can\'t see you watching anything on Crunchyroll right now.',
+      allowedMentions: { repliedUser: false }
+    });
+    return true;
+  }
+
+  const { title, season, episode } = parseWatchInfo(activity);
+  const memberName = message.member?.displayName || message.author.globalName || message.author.username;
+  const episodeInfo = [
+    season ? `Season ${season}` : null,
+    episode ? `Episode ${episode}` : null
+  ].filter(Boolean).join(' • ');
+
+  const embed = new EmbedBuilder()
+    .setColor(0xF47521)
+    .setAuthor({ name: `${memberName} is currently watching` })
+    .setTitle(title)
+    .setDescription(episodeInfo || 'Currently watching on Crunchyroll')
+    .setFooter({ text: 'Crunchyroll' });
+
+  const assets = activity.assets;
+  const largeImage = assets?.largeImageURL?.() || assets?.largeImage?.url || assets?.largeImage;
+  if (largeImage) embed.setImage(largeImage);
+
+  await message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
+  return true;
+}
+
 export async function handleCommand(message) {
   const isAfkCommand = /^\.afk(?:\s|$)/i.test(message.content);
+  const isCcCommand = /^\.cc(?:\s|$)/i.test(message.content);
   const body = isAfkCommand
     ? message.content.slice(4).trim()
-    : message.content.slice(config.prefix.length).trim();
+    : isCcCommand
+      ? message.content.slice(3).trim()
+      : message.content.slice(config.prefix.length).trim();
   const [command] = body.split(/\s+/);
-  const name = isAfkCommand ? 'afk' : command?.toLowerCase();
+  const name = isAfkCommand ? 'afk' : isCcCommand ? 'cc' : command?.toLowerCase();
 
   if (!name) return true;
+
+  if (name === 'cc') {
+    return handleCurrentlyWatching(message);
+  }
 
   if (name === 'afk') {
     const reason = (isAfkCommand ? body : body.slice(command.length))
