@@ -339,8 +339,8 @@ async function respondToMessage(message, mode) {
     content
   });
 
-  const reply = await generateReplyWithFallback({
-    message,
+  const result = await generateReplyWithFallback({
+    user: message.author,
     content,
     history,
     memories,
@@ -348,6 +348,17 @@ async function respondToMessage(message, mode) {
     creatorName: config.creatorName,
     botName: config.botName
   });
+
+  const reply = typeof result === 'string' ? result : result?.reply;
+  if (!reply) throw new Error('AI returned an empty reply.');
+
+  const generatedMemories = typeof result === 'object' && Array.isArray(result.memories)
+    ? mergeMemories(result.memories)
+    : [];
+
+  if (generatedMemories.length) {
+    await saveMemories(config.guildId, message.author.id, generatedMemories);
+  }
 
   await sendLongReply(message, reply);
 
@@ -394,7 +405,12 @@ client.on('messageCreate', async (message) => {
       return;
     }
     if (mode === 'semi' && !addressed) {
-      const shouldReply = await decideSpontaneousReplyWithFallback({ message, content });
+      const history = await getRecentMessages(config.guildId, message.channelId, config.historyLimit);
+      const shouldReply = await decideSpontaneousReplyWithFallback({
+        user: message.author,
+        content,
+        history
+      });
       if (!shouldReply) return;
       await queueForChannel(message.channelId, () => respondToMessage(message, mode));
     }
