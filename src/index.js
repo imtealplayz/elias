@@ -22,7 +22,7 @@ import { handleTicTacToeInteraction, isTicTacToeRequest, startTicTacToe } from '
 import { containsDiscordInviteLink } from './link-filter.js';
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences],
   partials: [Partials.Channel]
 });
 
@@ -310,12 +310,11 @@ async function respondToMessage(message, mode) {
   }
 
   const [history, loadedMemories] = await Promise.all([
-    getRecentMessages(config.guildId, message.channelId, config.maxContextMessages),
+    getRecentMessages(config.guildId, message.channelId, config.historyLimit),
     getUserMemories(config.guildId, message.author.id, config.maxMemoriesPerUser)
   ]);
 
-  const explicitMemories = extractExplicitMemories(content);
-  const { deleted: deletedMemories, remainingMemories } = await forgetRelevantMemories({
+  const forgetResult = await forgetRelevantMemories({
     content,
     memories: loadedMemories,
     history,
@@ -323,184 +322,101 @@ async function respondToMessage(message, mode) {
     discordId: message.author.id
   });
 
-  const memoriesForPrompt = remainingMemories;
-  const user = {
-    id: message.author.id,
-    username: message.member?.displayName || message.author.username
-  };
+  const explicitMemories = extractExplicitMemories(content);
+  const memories = mergeMemories(forgetResult.remainingMemories, explicitMemories);
 
-  let reply;
-  let memories;
-  try {
-    ({ reply, memories } = await generateReplyWithFallback({
-      user,
-      content,
-      history,
-      memories: memoriesForPrompt,
-      mode,
-      botName: config.botName,
-      creator: 'Teal'
-    }));
-  } catch (error) {
-    if (isProviderRateLimitError(error)) {
-      markAiRateLimited(error);
-      await sendRateLimitNotice(message);
-      return;
-    }
-    throw error;
+  if (explicitMemories.length) {
+    await saveMemories(config.guildId, message.author.id, explicitMemories);
   }
+
+  const saved = await saveMessage({
+    guildId: config.guildId,
+    channelId: message.channelId,
+    discordId: message.author.id,
+    username: message.author.username,
+    displayName: message.member?.displayName || message.author.globalName || message.author.username,
+    role: 'user',
+    content
+  });
+
+  const reply = await generateReplyWithFallback({
+    message,
+    content,
+    history,
+    memories,
+    mode,
+    creatorName: config.creatorName,
+    botName: config.botName
+  });
 
   await sendLongReply(message, reply);
 
-  const mergedMemories = mergeMemories(explicitMemories, memories);
-  if (deletedMemories) console.log(`Memory update removed ${deletedMemories} item(s) before AI generation.`);
-  if (mergedMemories.length) await saveMemories(config.guildId, message.author.id, mergedMemories);
-
-  await upsertUser({
-    id: message.author.id,
-    username: message.author.username,
-    displayName: message.member?.displayName || message.author.username
-  });
-  await saveMessage({
-    guildId: config.guildId,
-    channelId: message.channelId,
-    userId: message.author.id,
-    username: message.member?.displayName || message.author.username,
-    content,
-    isBot: false
-  });
-  await saveMessage({
-    guildId: config.guildId,
-    channelId: message.channelId,
-    userId: client.user.id,
-    username: client.user.username,
-    content: reply,
-    isBot: true
-  });
+  if (saved) {
+    await saveMessage({
+      guildId: config.guildId,
+      channelId: message.channelId,
+      discordId: client.user.id,
+      username: client.user.username,
+      displayName: client.user.displayName || client.user.username,
+      role: 'assistant',
+      content: reply
+    });
+  }
 }
 
-async function handleSemiMessage(message, content) {
-  if (isAiTemporarilyUnavailable()) return;
-  const repliedToElias = await isReplyToElias(message);
-  const directlyAddressed = message.mentions.has(client.user.id) || repliedToElias || containsNameMention(content);
-
-  if (directlyAddressed) {
-    if (await handleSummaryRequest(message, content)) return;
-    if (isTicTacToeRequest(content)) {
-      await startTicTacToe(message);
-      return;
-    }
-    await respondToMessage(message, 'semi');
-    return;
-  }
-
-  const now = Date.now();
-  const lastSpontaneous = spontaneousCooldowns.get(message.channelId) || 0;
-  if (now - lastSpontaneous < config.semiCooldownMs) return;
-  if (Math.random() > config.spontaneousChance) return;
-
-  const history = await getRecentMessages(config.guildId, message.channelId, config.maxContextMessages);
+async function generateReplyWithFallbackAndRateLimit(payload) {
   try {
-    const shouldReply = await decideSpontaneousReplyWithFallback({
-      user: { username: message.member?.displayName || message.author.username, id: message.author.id },
-      content,
-      history
-    });
-    if (!shouldReply) return;
-    spontaneousCooldowns.set(message.channelId, now);
-    await respondToMessage(message, 'semi');
+    return await generateReplyWithFallback(payload);
   } catch (error) {
-    if (isProviderRateLimitError(error)) {
-      markAiRateLimited(error);
-      return;
-    }
+    if (isProviderRateLimitError(error)) markAiRateLimited(error);
     throw error;
   }
 }
 
-async function handleDiscordInvite(message) {
-  if (!containsDiscordInviteLink(message.content)) return false;
-  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) return false;
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.guild || !markMessageProcessed(message.id)) return;
 
   try {
-    await message.delete();
-  } catch (error) {
-    console.warn(`Failed to delete Discord invite from ${message.author.id}:`, error?.message || error);
-  }
+    const handled = await handleCommand(message);
+    if (handled) return;
 
-  try {
-    await message.channel.send({
-      content: '🔗 Links are not allowed! Only admins can send Discord invite links.',
-      allowedMentions: { parse: [] }
-    });
-  } catch (error) {
-    console.warn(`Failed to send link warning in ${message.channelId}:`, error?.message || error);
-  }
-  return true;
-}
+    const mode = await getChannelMode(config.guildId, message.channelId);
+    const content = cleanContent(message);
+    const addressed = containsNameMention(content) || await isReplyToElias(message);
 
-client.once('ready', () => {
-  console.log(`✅ ${client.user.tag} is online.`);
-  console.log(`Guild lock: ${config.guildId}`);
-  console.log(`Primary model: ${config.geminiModel}`);
-  console.log(`Fallback model: ${config.groqModel}`);
+    if (mode === 'blocked') return;
+    if (mode === 'main') {
+      await queueForChannel(message.channelId, () => respondToMessage(message, mode));
+      return;
+    }
+    if (mode === 'semi' && addressed) {
+      await queueForChannel(message.channelId, () => respondToMessage(message, mode));
+      return;
+    }
+    if (mode === 'semi' && !addressed) {
+      const shouldReply = await decideSpontaneousReplyWithFallback({ message, content });
+      if (!shouldReply) return;
+      await queueForChannel(message.channelId, () => respondToMessage(message, mode));
+    }
+  } catch (error) {
+    console.error('Message handler error:', error);
+  }
 });
 
 client.on('interactionCreate', async (interaction) => {
   try {
-    if (interaction.guildId !== config.guildId) return;
+    if (isTicTacToeRequest(interaction)) {
+      await startTicTacToe(interaction);
+      return;
+    }
     await handleTicTacToeInteraction(interaction);
   } catch (error) {
-    console.error('Game interaction error:', error);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      try { await interaction.reply({ content: '⚠️ Something went wrong with the game.', ephemeral: true }); } catch {}
-    }
+    console.error('Interaction handler error:', error);
   }
 });
 
-client.on('messageCreate', async (message) => {
-  try {
-    if (message.author.bot) return;
-    if (!message.guild) return;
-    if (message.guild.id !== config.guildId) return;
-    if (!markMessageProcessed(message.id)) return;
-    if (await handleDiscordInvite(message)) return;
-    if (message.content.startsWith(config.prefix) || /^\.afk(?:\s|$)/i.test(message.content)) {
-      await handleCommand(message);
-      return;
-    }
-
-    const mode = await getChannelMode(config.guildId, message.channelId);
-    if (!mode || mode === 'blocked') return;
-    const content = cleanContent(message);
-
-    if (mode === 'main') {
-      if (await handleSummaryRequest(message, content)) return;
-      if (isTicTacToeRequest(content)) {
-        await startTicTacToe(message);
-        return;
-      }
-      await queueForChannel(message.channelId, () => respondToMessage(message, 'main'));
-      return;
-    }
-
-    if (mode === 'semi') {
-      await queueForChannel(message.channelId, () => handleSemiMessage(message, content));
-    }
-  } catch (error) {
-    console.error('Message handler error:', error);
-    if (message.guildId === config.guildId && !message.author.bot && message.content.length < 2000) {
-      if (isProviderRateLimitError(error)) {
-        markAiRateLimited(error);
-        try { await sendRateLimitNotice(message); } catch {}
-        return;
-      }
-      try { await message.channel.send('⚠️ I hit an error while thinking. Try again in a moment.'); } catch {}
-    }
-  }
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
 });
-
-process.on('unhandledRejection', (error) => console.error('Unhandled rejection:', error));
-process.on('uncaughtException', (error) => console.error('Uncaught exception:', error));
 
 client.login(config.token);
