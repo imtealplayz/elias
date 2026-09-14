@@ -105,6 +105,31 @@ export async function deleteUserMemories(guildId, discordId) {
   return request('memories', { method: 'DELETE', query: `?guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}` });
 }
 
+export async function upsertLastCrunchyrollWatch({ discordId, animeTitle, episodeTitle = null, season = null, episode = null, thumbnailUrl = null, watchedAt = new Date().toISOString() }) {
+  const rows = await request('crunchyroll_last_watch', {
+    method: 'POST',
+    query: '?on_conflict=discord_id',
+    body: [{
+      discord_id: discordId,
+      anime_title: String(animeTitle || 'Unknown anime').trim().slice(0, 300),
+      episode_title: episodeTitle ? String(episodeTitle).trim().slice(0, 300) : null,
+      season: season ? Number(season) : null,
+      episode: episode ? Number(episode) : null,
+      thumbnail_url: thumbnailUrl ? String(thumbnailUrl).trim().slice(0, 2000) : null,
+      watched_at: watchedAt
+    }],
+    prefer: 'resolution=merge-duplicates,return=representation'
+  });
+  return rows?.[0] || null;
+}
+
+export async function getLastCrunchyrollWatch(discordId) {
+  const rows = await request('crunchyroll_last_watch', {
+    query: `?select=discord_id,anime_title,episode_title,season,episode,thumbnail_url,watched_at&discord_id=eq.${encode(discordId)}&limit=1`
+  });
+  return rows?.[0] || null;
+}
+
 export async function createReminder({ guildId, discordId, channelId, task, dueAt }) {
   const rows = await request('reminders', {
     method: 'POST',
