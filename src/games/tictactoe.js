@@ -1,8 +1,15 @@
 import {
   ActionRowBuilder,
+  ApplicationIntegrationType,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  InteractionContextType,
+  REST,
+  Routes,
+  SlashCommandBuilder
 } from 'discord.js';
+import { config } from '../config.js';
+import { handleCurrentlyWatchingInteraction } from '../commands.js';
 import { handleBlackjackInteraction, isBlackjackRequest, startBlackjack } from './blackjack.js';
 
 const games = new Map();
@@ -10,6 +17,22 @@ const games = new Map();
 const EMPTY = '⬜';
 const X = '❌';
 const O = '⭕';
+
+const crcCommand = new SlashCommandBuilder()
+  .setName('crc')
+  .setDescription('Show what you are currently watching on Crunchyroll')
+  .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+  .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel);
+
+async function registerGlobalCommands() {
+  const rest = new REST({ version: '10' }).setToken(config.token);
+  await rest.post(Routes.applicationCommands(config.clientId), { body: crcCommand.toJSON() });
+  console.log('Registered global /crc command for guild and user installations.');
+}
+
+registerGlobalCommands().catch((error) => {
+  console.error('Failed to register global /crc command:', error?.message || error);
+});
 
 function winner(board) {
   const lines = [
@@ -193,6 +216,10 @@ export async function startTicTacToe(message) {
 }
 
 export async function handleTicTacToeInteraction(interaction) {
+  if (interaction.isChatInputCommand() && interaction.commandName === 'crc') {
+    return handleCurrentlyWatchingInteraction(interaction, interaction.client);
+  }
+
   if (await handleBlackjackInteraction(interaction)) return true;
   if (!interaction.isButton() || !interaction.customId.startsWith('ttt:')) return false;
 
