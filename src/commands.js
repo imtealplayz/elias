@@ -50,14 +50,12 @@ const commandModes = {
   unblock: 'blocked'
 };
 
-function getCrunchyrollActivity(message) {
-  const activities = message.member?.presence?.activities || [];
-
-  return activities.find((activity) => {
-    const name = String(activity.name || '').toLowerCase();
-    const details = String(activity.details || '').toLowerCase();
-    const state = String(activity.state || '').toLowerCase();
-    const url = String(activity.url || '').toLowerCase();
+function getCrunchyrollActivityFromActivities(activities) {
+  return (activities || []).find((activity) => {
+    const name = String(activity?.name || '').toLowerCase();
+    const details = String(activity?.details || '').toLowerCase();
+    const state = String(activity?.state || '').toLowerCase();
+    const url = String(activity?.url || '').toLowerCase();
 
     return name === 'crunchyroll' ||
       name.includes('crunchyroll') ||
@@ -67,47 +65,30 @@ function getCrunchyrollActivity(message) {
   });
 }
 
-function collectActivityStrings(value, seen = new Set(), depth = 0) {
-  if (depth > 3 || value == null) return [];
-  if (typeof value === 'string') return [value];
-  if (typeof value !== 'object' || seen.has(value)) return [];
-
-  seen.add(value);
-  const strings = [];
-  for (const child of Object.values(value)) {
-    strings.push(...collectActivityStrings(child, seen, depth + 1));
-  }
-  return strings;
+function getCrunchyrollActivity(message) {
+  return getCrunchyrollActivityFromActivities(message.member?.presence?.activities);
 }
 
-function parseSeasonEpisode(text) {
-  const value = String(text || '').trim();
-  if (!value) return null;
-
-  const compact = value.match(/\bS\s*(\d+)\s*[-–—·•:/|]?\s*E\s*(\d+)\b/i);
-  if (compact) return { season: compact[1], episode: compact[2], match: compact[0] };
-
-  const named = value.match(/\bSeason\s*(\d+)\s*(?:[-–—·•:/|]|and)?\s*Episode\s*(\d+)\b/i);
-  if (named) return { season: named[1], episode: named[2], match: named[0] };
-
-  const xFormat = value.match(/\b(\d+)\s*[x×]\s*(\d+)\b/i);
-  if (xFormat) return { season: xFormat[1], episode: xFormat[2], match: xFormat[0] };
-
-  return null;
-}
-
-function cleanEpisodeTitle(value, seasonEpisodeMatch) {
+function parseSeasonEpisode(value) {
   const text = String(value || '').trim();
   if (!text) return null;
 
-  let cleaned = text;
-  if (seasonEpisodeMatch?.match) {
-    cleaned = cleaned.replace(seasonEpisodeMatch.match, '').trim();
-  }
+  // Crunchyroll's Discord Rich Presence uses the Sx • Ey format.
+  // Also accept the compact SxEy form shown by some activity payloads.
+  const match = text.match(/^S(\d+)\s*(?:•|·)\s*E(\d+)$/i) ||
+    text.match(/^S(\d+)\s*E(\d+)$/i);
 
-  cleaned = cleaned
-    .replace(/^[•·|:/–—-]+\s*/, '')
-    .replace(/[•·|]+\s*$/, '')
+  if (!match) return null;
+  return { season: match[1], episode: match[2] };
+}
+
+function cleanEpisodeTitle(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/^S\d+\s*(?:•|·)\s*E\d+\s*[-–—:|·•]?\s*/i, '')
+    .replace(/^S\d+\s*E\d+\s*[-–—:|·•]?\s*/i, '')
     .trim();
 
   return cleaned || null;
@@ -117,71 +98,23 @@ function parseWatchInfo(activity) {
   const name = String(activity?.name || '').trim();
   const details = String(activity?.details || '').trim();
   const state = String(activity?.state || '').trim();
-  const allStrings = [
-    name,
-    details,
-    state,
-    ...collectActivityStrings(activity)
-  ].filter(Boolean);
 
-  let season = null;
-  let episode = null;
-  let seasonEpisodeMatch = null;
+  const seasonEpisode = parseSeasonEpisode(state);
+  const isCrunchyrollName = /^crunchyroll$/i.test(name) || /crunchyroll/i.test(name);
 
-  for (const value of allStrings) {
-    const match = parseSeasonEpisode(value);
-    if (!match) continue;
-    season = match.season;
-    episode = match.episode;
-    seasonEpisodeMatch = { ...match, source: value };
-    break;
-  }
+  const title = (isCrunchyrollName ? details : name) || details || 'Unknown anime';
+  const episodeTitle = cleanEpisodeTitle(details) || null;
 
-  const isCrunchyrollName = /crunchyroll/i.test(name);
-  const titleCandidates = isCrunchyrollName
-    ? [details, state, ...allStrings]
-    : [name, details, state, ...allStrings];
-
-  const title = titleCandidates
-    .map((value) => String(value || '').trim())
-    .filter(Boolean)
-    .filter((value) => !/^crunchyroll$/i.test(value))
-    .filter((value) => !parseSeasonEpisode(value))
-    .find((value) => !/^watching$/i.test(value)) || 'Unknown anime';
-
-  const episodeTitleCandidates = [state, details, ...allStrings]
-    .map((value) => String(value || '').trim())
-    .filter(Boolean)
-    .filter((value) => value !== title)
-    .filter((value) => !/^crunchyroll$/i.test(value))
-    .filter((value) => !/^watching$/i.test(value));
-
-  let episodeTitle = null;
-  for (const value of episodeTitleCandidates) {
-    const match = parseSeasonEpisode(value);
-    const cleaned = cleanEpisodeTitle(value, match);
-    if (!cleaned) continue;
-    if (/^(?:season|episode)\s*\d+$/i.test(cleaned)) continue;
-    episodeTitle = cleaned;
-    break;
-  }
-
-  return { title, episodeTitle, season, episode };
+  return {
+    title: title.replace(/^crunchyroll$/i, 'Unknown anime').trim(),
+    episodeTitle: episodeTitle && !/^crunchyroll$/i.test(episodeTitle) ? episodeTitle : null,
+    season: seasonEpisode?.season || null,
+    episode: seasonEpisode?.episode || null
+  };
 }
 
-async function handleCurrentlyWatching(message) {
-  const activity = getCrunchyrollActivity(message);
-
-  if (!activity) {
-    await message.reply({
-      content: '📺 I can\'t see you watching anything on Crunchyroll right now.',
-      allowedMentions: { repliedUser: false }
-    });
-    return true;
-  }
-
+function buildCurrentlyWatchingEmbed({ memberName, activity }) {
   const { title, episodeTitle, season, episode } = parseWatchInfo(activity);
-  const memberName = message.member?.displayName || message.author.globalName || message.author.username;
 
   const embed = new EmbedBuilder()
     .setColor(0xF47521)
@@ -201,8 +134,46 @@ async function handleCurrentlyWatching(message) {
   const largeImage = assets?.largeImageURL?.() || assets?.largeImage?.url || assets?.largeImage;
   if (largeImage) embed.setThumbnail(largeImage);
 
-  await message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
+  return embed;
+}
+
+async function replyCurrentlyWatching(target, activity) {
+  if (!activity) {
+    await target.reply({
+      content: '📺 I can\'t see you watching anything on Crunchyroll right now.',
+      allowedMentions: { repliedUser: false }
+    });
+    return true;
+  }
+
+  const memberName = target.member?.displayName || target.user?.globalName || target.author?.globalName || target.user?.username || target.author?.username || 'You';
+  const embed = buildCurrentlyWatchingEmbed({ memberName, activity });
+
+  await target.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
   return true;
+}
+
+async function handleCurrentlyWatching(message) {
+  return replyCurrentlyWatching(message, getCrunchyrollActivity(message));
+}
+
+export async function handleCurrentlyWatchingInteraction(interaction, client) {
+  let activity = null;
+
+  if (interaction.guild) {
+    const member = interaction.guild.members.cache.get(interaction.user.id);
+    activity = getCrunchyrollActivityFromActivities(member?.presence?.activities);
+  }
+
+  if (!activity) {
+    for (const guild of client.guilds.cache.values()) {
+      const presence = guild.presences.cache.get(interaction.user.id);
+      activity = getCrunchyrollActivityFromActivities(presence?.activities);
+      if (activity) break;
+    }
+  }
+
+  return replyCurrentlyWatching(interaction, activity);
 }
 
 export async function handleCommand(message) {
