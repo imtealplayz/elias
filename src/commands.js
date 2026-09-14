@@ -6,7 +6,9 @@ import {
   removeChannelMode,
   setChannelMode,
   getUserMemories,
-  deleteUserMemories
+  deleteUserMemories,
+  getLastCrunchyrollWatch,
+  upsertLastCrunchyrollWatch
 } from './db.js';
 import { getUserAfk, setUserAfk } from './afk.js';
 
@@ -130,21 +132,15 @@ function getActivityAssetText(activity, key) {
 
 function getNamedEpisodeMetadata(activity) {
   const result = { season: null, episode: null };
+  const seasonValue = activity?.seasonNumber ?? activity?.season_number ?? activity?.season;
+  const episodeValue = activity?.episodeNumber ?? activity?.episode_number ?? activity?.episode;
 
-  const candidates = [activity];
-  for (const node of candidates) {
-    if (!node || typeof node !== 'object') continue;
+  if (typeof seasonValue === 'number' || typeof seasonValue === 'string') {
+    result.season = normalizeNumber(seasonValue);
+  }
 
-    const seasonValue = node.seasonNumber ?? node.season_number ?? node.season;
-    const episodeValue = node.episodeNumber ?? node.episode_number ?? node.episode;
-
-    if (typeof seasonValue === 'number' || typeof seasonValue === 'string') {
-      result.season = normalizeNumber(seasonValue);
-    }
-
-    if (typeof episodeValue === 'number' || typeof episodeValue === 'string') {
-      result.episode = normalizeNumber(episodeValue);
-    }
+  if (typeof episodeValue === 'number' || typeof episodeValue === 'string') {
+    result.episode = normalizeNumber(episodeValue);
   }
 
   return result.season || result.episode ? result : null;
@@ -416,7 +412,7 @@ async function searchCrunchyrollForEpisode(title, episodeTitle) {
   return null;
 }
 
-async function fetchCrunchyrollWatchData(activity, localInfo) {
+async function fetchCrunchyrollWatchData(activity) {
   const syncId = String(activity?.syncId || '').trim();
   const activityUrl = String(activity?.url || '').trim();
   const urls = [];
@@ -478,7 +474,7 @@ async function resolveWatchInfo(activity) {
 
   if (local.season && local.episode) return local;
 
-  const remote = await fetchCrunchyrollWatchData(activity, local);
+  const remote = await fetchCrunchyrollWatchData(activity);
   if (!remote) return local;
 
   return {
@@ -487,6 +483,19 @@ async function resolveWatchInfo(activity) {
     season: local.season || remote.season || null,
     episode: local.episode || remote.episode || null
   };
+}
+
+function getUserId(target) {
+  return target.user?.id || target.author?.id || null;
+}
+
+function getMemberName(target) {
+  return target.member?.displayName || target.user?.globalName || target.author?.globalName || target.user?.username || target.author?.username || 'You';
+}
+
+function getActivityThumbnail(activity) {
+  const assets = activity?.assets;
+  return assets?.largeImageURL?.() || assets?.largeImage?.url || assets?.largeImage || null;
 }
 
 function buildCurrentlyWatchingEmbed({ memberName, activity, watchInfo }) {
@@ -507,30 +516,78 @@ function buildCurrentlyWatchingEmbed({ memberName, activity, watchInfo }) {
     .setTitle(title)
     .setFooter({ text: 'Crunchyroll' });
 
-  if (descriptionLines.length) {
-    embed.setDescription(descriptionLines.join('\n'));
+  if (descriptionLines.length) embed.setDescription(descriptionLines.join('\n'));
+
+  const thumbnail = getActivityThumbnail(activity);
+  if (thumbnail) embed.setThumbnail(thumbnail);
+
+  return embed;
+}
+
+function buildLastWatchedEmbed({ memberName, watch }) {
+  const descriptionLines = [];
+  if (watch.episode_title) descriptionLines.push(`**${watch.episode_title}**`);
+  if (watch.season && watch.episode) descriptionLines.push(`S${watch.season} • E${watch.episode}`);
+
+  const timestamp = new Date(watch.watched_at);
+  if (!Number.isNaN(timestamp.getTime())) {
+    const unix = Math.floor(timestamp.getTime() / 1000);
+    descriptionLines.push(`Last watched: <t:${unix}:F> (<t:${unix}:R>)`);
   }
 
-  const assets = activity.assets;
-  const largeImage = assets?.largeImageURL?.() || assets?.largeImage?.url || assets?.largeImage;
-  if (largeImage) embed.setThumbnail(largeImage);
+  const embed = new EmbedBuilder()
+    .setColor(0x00C2B8)
+    .setAuthor({ name: `${memberName}'s last watch` })
+    .setTitle(watch.anime_title || 'Unknown anime')
+    .setFooter({ text: 'Crunchyroll' });
+
+  if (descriptionLines.length) embed.setDescription(descriptionLines.join('\n'));
+  if (watch.thumbnail_url) embed.setThumbnail(watch.thumbnail_url);
 
   return embed;
 }
 
 async function replyCurrentlyWatching(target, activity) {
+  const discordId = getUserId(target);
+  const memberName = getMemberName(target);
+
   if (!activity) {
-    await target.reply({
-      content: 'I can\'t see you watching anything on Crunchyroll right now.',
-      allowedMentions: { repliedUser: false }
-    });
+    const lastWatch = discordId ? await getLastCrunchyrollWatch(discordId) : null;
+
+    if (!lastWatch) {
+      await target.reply({
+        content: 'I can\'t see you watching anything on Crunchyroll right now, and I don\'t have a previous watch saved.',
+        allowedMentions: { repliedUser: false }
+      });
+      return true;
+    }
+
+    const embed = buildLastWatchedEmbed({ memberName, watch: lastWatch });
+    await target.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
     return true;
   }
 
-  const memberName = target.member?.displayName || target.user?.globalName || target.author?.globalName || target.user?.username || target.author?.username || 'You';
   const watchInfo = await resolveWatchInfo(activity);
-  const embed = buildCurrentlyWatchingEmbed({ memberName, activity, watchInfo });
+  const thumbnailUrl = getActivityThumbnail(activity);
+  const watchedAt = new Date().toISOString();
 
+  if (discordId && watchInfo.title && watchInfo.title !== 'Unknown anime') {
+    try {
+      await upsertLastCrunchyrollWatch({
+        discordId,
+        animeTitle: watchInfo.title,
+        episodeTitle: watchInfo.episodeTitle,
+        season: watchInfo.season,
+        episode: watchInfo.episode,
+        thumbnailUrl,
+        watchedAt
+      });
+    } catch (error) {
+      console.error(`Failed to save last Crunchyroll watch for ${discordId}:`, error?.message || error);
+    }
+  }
+
+  const embed = buildCurrentlyWatchingEmbed({ memberName, activity, watchInfo });
   await target.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
   return true;
 }
