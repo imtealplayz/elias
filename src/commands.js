@@ -69,15 +69,45 @@ function getCrunchyrollActivity(message) {
   return getCrunchyrollActivityFromActivities(message.member?.presence?.activities);
 }
 
+function normalizeNumber(value) {
+  const text = String(value ?? '').trim();
+  return /^\d+$/.test(text) ? text : null;
+}
+
 function parseSeasonEpisode(value) {
   const text = String(value || '').trim();
   if (!text) return null;
 
-  const match = text.match(/\bS(\d+)\s*(?:•|·)\s*E(\d+)\b/i) ||
-    text.match(/\bS(\d+)\s*E(\d+)\b/i);
+  const patterns = [
+    /\bS(\d+)\s*(?:•|·|[-–—:/|])\s*E(\d+)\b/i,
+    /\bS(\d+)\s*E(\d+)\b/i,
+    /\bS(\d+)\s*[x×]\s*E?(\d+)\b/i,
+    /\bSeason\s*(\d+)\s*(?:•|·|[-–—:/|,]|and)\s*Episode\s*(\d+)\b/i,
+    /\bSeason\s*(\d+)\s*Episode\s*(\d+)\b/i
+  ];
 
-  if (!match) return null;
-  return { season: match[1], episode: match[2] };
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return { season: match[1], episode: match[2] };
+  }
+
+  return null;
+}
+
+function parseSeasonOnly(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const match = text.match(/\b(?:Season|S)\s*(\d+)\b/i);
+  return match ? match[1] : null;
+}
+
+function parseEpisodeOnly(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const match = text.match(/\b(?:Episode|Ep\.?|E)\s*(\d+)\b/i);
+  return match ? match[1] : null;
 }
 
 function cleanEpisodeTitle(value) {
@@ -87,6 +117,7 @@ function cleanEpisodeTitle(value) {
   const cleaned = text
     .replace(/^S\d+\s*(?:•|·)\s*E\d+\s*[-–—:|·•]?\s*/i, '')
     .replace(/^S\d+\s*E\d+\s*[-–—:|·•]?\s*/i, '')
+    .replace(/^Season\s*\d+\s*(?:[-–—:|,]\s*)?Episode\s*\d+\s*[-–—:|·•]?\s*/i, '')
     .trim();
 
   return cleaned || null;
@@ -97,53 +128,118 @@ function getActivityAssetText(activity, key) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function normalizeEpisodeNumber(value) {
-  const text = String(value ?? '').trim();
-  if (!text) return null;
-  const match = text.match(/^\d+$/);
-  return match ? text : null;
+function getNamedEpisodeMetadata(activity) {
+  const result = { season: null, episode: null };
+
+  const candidates = [activity];
+  for (const node of candidates) {
+    if (!node || typeof node !== 'object') continue;
+
+    const seasonValue = node.seasonNumber ?? node.season_number ?? node.season;
+    const episodeValue = node.episodeNumber ?? node.episode_number ?? node.episode;
+
+    if (typeof seasonValue === 'number' || typeof seasonValue === 'string') {
+      result.season = normalizeNumber(seasonValue);
+    }
+
+    if (typeof episodeValue === 'number' || typeof episodeValue === 'string') {
+      result.episode = normalizeNumber(episodeValue);
+    }
+  }
+
+  return result.season || result.episode ? result : null;
 }
 
-function normalizeSeasonNumber(value) {
-  return normalizeEpisodeNumber(value);
+function findEpisodeMetadataByKey(node, depth = 0, seen = new Set()) {
+  if (!node || typeof node !== 'object' || depth > 4 || seen.has(node)) return null;
+  seen.add(node);
+
+  const output = { season: null, episode: null };
+
+  for (const [key, value] of Object.entries(node)) {
+    const lowerKey = String(key).toLowerCase();
+
+    if (/(?:season|seasonnumber|season_number)/.test(lowerKey)) {
+      const number = normalizeNumber(value);
+      if (number) output.season = number;
+    }
+
+    if (/(?:episode|episodenumber|episode_number)/.test(lowerKey)) {
+      const number = normalizeNumber(value);
+      if (number) output.episode = number;
+    }
+
+    if (value && typeof value === 'object') {
+      const nested = findEpisodeMetadataByKey(value, depth + 1, seen);
+      if (nested?.season && !output.season) output.season = nested.season;
+      if (nested?.episode && !output.episode) output.episode = nested.episode;
+    }
+  }
+
+  return output.season || output.episode ? output : null;
 }
 
-function extractStructuredEpisode(node) {
-  if (!node || typeof node !== 'object') return null;
+function extractActivitySeasonEpisode(activity) {
+  const named = getNamedEpisodeMetadata(activity) || findEpisodeMetadataByKey(activity);
+  if (named?.season && named?.episode) return named;
+
+  const name = String(activity?.name || '').trim();
+  const details = String(activity?.details || '').trim();
+  const state = String(activity?.state || '').trim();
+  const largeText = getActivityAssetText(activity, 'largeText') || getActivityAssetText(activity, 'large_text');
+  const smallText = getActivityAssetText(activity, 'smallText') || getActivityAssetText(activity, 'small_text');
+
+  const explicit = [state, largeText, smallText, details, name]
+    .map(parseSeasonEpisode)
+    .find(Boolean) || null;
+
+  if (explicit) return explicit;
+
+  const season = [state, largeText, smallText, details, name]
+    .map(parseSeasonOnly)
+    .find(Boolean) || null;
+  const episode = [state, largeText, smallText, details, name]
+    .map(parseEpisodeOnly)
+    .find(Boolean) || null;
+
+  return season || episode ? { season, episode } : null;
+}
+
+function extractStructuredEpisode(node, depth = 0, seen = new Set()) {
+  if (!node || typeof node !== 'object' || depth > 6 || seen.has(node)) return null;
+  seen.add(node);
 
   if (Array.isArray(node)) {
     for (const item of node) {
-      const result = extractStructuredEpisode(item);
-      if (result) return result;
+      const result = extractStructuredEpisode(item, depth + 1, seen);
+      if (result?.season || result?.episode) return result;
     }
     return null;
   }
 
   if (Array.isArray(node['@graph'])) {
-    const result = extractStructuredEpisode(node['@graph']);
-    if (result) return result;
+    const result = extractStructuredEpisode(node['@graph'], depth + 1, seen);
+    if (result?.season || result?.episode) return result;
   }
 
   const type = node['@type'];
   const types = Array.isArray(type) ? type.map(String) : [String(type || '')];
-  const looksLikeEpisode = types.some((value) => /TVEpisode|Episode|VideoObject/i.test(value));
+  const looksLikeEpisode = types.some((value) => /TVEpisode|Episode/i.test(value));
 
   if (looksLikeEpisode) {
-    const season = normalizeSeasonNumber(
+    const season = normalizeNumber(
       node.seasonNumber ?? node.partOfSeason?.seasonNumber ?? node.season?.seasonNumber
     );
-    const episode = normalizeEpisodeNumber(node.episodeNumber);
+    const episode = normalizeNumber(node.episodeNumber);
     const title = typeof node.name === 'string' ? node.name.trim() : null;
 
-    if (season || episode || title) {
-      return { season, episode, title };
-    }
+    if (season || episode) return { season, episode, title };
   }
 
   for (const value of Object.values(node)) {
     if (value && typeof value === 'object') {
-      const result = extractStructuredEpisode(value);
-      if (result) return result;
+      const result = extractStructuredEpisode(value, depth + 1, seen);
+      if (result?.season || result?.episode) return result;
     }
   }
 
@@ -166,16 +262,43 @@ function extractJsonLdEpisodes(html) {
   return null;
 }
 
-function extractExplicitSeasonEpisodeFromHtml(html) {
-  const match = String(html || '').match(/\bS(\d+)\s*(?:•|·)\s*E(\d+)\b/i) ||
-    String(html || '').match(/\bS(\d+)\s*E(\d+)\b/i);
+function extractNumberByKeyFromHtml(html, keyPattern) {
+  const patterns = [
+    new RegExp(`\\\"(?:${keyPattern})\\\"\\s*:\\s*\\\"?(\\d+)\\\"?`, 'i'),
+    new RegExp(`(?:${keyPattern})\\s*[:=]\\s*\\\"?(\\d+)\\\"?`, 'i')
+  ];
 
-  return match ? { season: match[1], episode: match[2] } : null;
+  for (const pattern of patterns) {
+    const match = String(html || '').match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+function extractExplicitSeasonEpisodeFromHtml(html) {
+  const text = String(html || '');
+  const patterns = [
+    /\bS(\d+)\s*(?:•|·)\s*E(\d+)\b/i,
+    /\bS(\d+)\s*E(\d+)\b/i,
+    /\bSeason\s*(\d+)\s*(?:•|·|[-–—:/|,]|and)?\s*Episode\s*(\d+)\b/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return { season: match[1], episode: match[2] };
+  }
+
+  const episode = extractNumberByKeyFromHtml(text, 'episodeNumber|episode_number');
+  const season = extractNumberByKeyFromHtml(text, 'seasonNumber|season_number');
+
+  return season || episode ? { season, episode } : null;
 }
 
 function extractEpisodeTitleFromHtml(html) {
   const patterns = [
-    /\bE\d+\s*[-–—:]\s*([^<\n]{2,140})/i,
+    /#?\s*E\d+\s*[-–—:]\s*([^<\n]{2,160})/i,
+    /\bE\d+\s*[-–—:]\s*([^<\n]{2,160})/i,
     /"episodeTitle"\s*:\s*"([^"]+)"/i,
     /"title"\s*:\s*"(E\d+\s*[-–—:]\s*[^"\n]+)"/i
   ];
@@ -197,7 +320,103 @@ function extractEpisodeTitleFromHtml(html) {
   return null;
 }
 
-async function fetchCrunchyrollWatchData(activity) {
+function extractSeasonFromPageText(html) {
+  const text = String(html || '');
+  const patterns = [
+    /\bSeason\s*(\d+)\b/i,
+    /\bS(\d+)\s*[-–—:|]/i,
+    /\bseasonNumber\s*[=:]\s*["']?(\d+)["']?/i,
+    /\bseason_number\s*[=:]\s*["']?(\d+)["']?/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+function extractWatchLinks(html) {
+  const links = [];
+  const seen = new Set();
+  const pattern = /(?:href|url)=["'](https?:\/\/(?:www\.)?crunchyroll\.com\/watch\/[^"'#?]+|\/watch\/[^"'#?]+)["']/gi;
+
+  for (const match of String(html || '').matchAll(pattern)) {
+    let url = match[1];
+    if (url.startsWith('/')) url = `https://www.crunchyroll.com${url}`;
+    if (!seen.has(url)) {
+      seen.add(url);
+      links.push(url);
+    }
+    if (links.length >= 6) break;
+  }
+
+  return links;
+}
+
+async function fetchHtml(url) {
+  const response = await fetch(url, {
+    headers: {
+      'user-agent': 'Elias/1.0',
+      'accept-language': 'en-US,en;q=0.9'
+    },
+    signal: AbortSignal.timeout(6000),
+    redirect: 'follow'
+  });
+
+  if (!response.ok) return null;
+  return response.text();
+}
+
+async function resolveEpisodeFromCrunchyrollPage(url) {
+  try {
+    const html = await fetchHtml(url);
+    if (!html) return null;
+
+    const structured = extractJsonLdEpisodes(html);
+    const explicit = extractExplicitSeasonEpisodeFromHtml(html);
+    const episodeTitle = structured?.title || extractEpisodeTitleFromHtml(html);
+    const season = structured?.season || explicit?.season || extractSeasonFromPageText(html);
+    const episode = structured?.episode || explicit?.episode;
+
+    if (season || episode) {
+      return { season: season || null, episode: episode || null, episodeTitle };
+    }
+  } catch {
+    // Public page lookup is only a fallback.
+  }
+
+  return null;
+}
+
+async function searchCrunchyrollForEpisode(title, episodeTitle) {
+  if (!title || !episodeTitle) return null;
+
+  const query = encodeURIComponent(`${title} ${episodeTitle}`);
+  const searchUrl = `https://www.crunchyroll.com/search?q=${query}`;
+
+  try {
+    const html = await fetchHtml(searchUrl);
+    if (!html) return null;
+
+    const links = extractWatchLinks(html);
+    for (const url of links) {
+      const info = await resolveEpisodeFromCrunchyrollPage(url);
+      if (!info) continue;
+
+      if (!info.episodeTitle || info.episodeTitle.toLowerCase() === episodeTitle.toLowerCase()) {
+        return info;
+      }
+    }
+  } catch {
+    // Ignore search failures and leave the activity-only data intact.
+  }
+
+  return null;
+}
+
+async function fetchCrunchyrollWatchData(activity, localInfo) {
   const syncId = String(activity?.syncId || '').trim();
   const activityUrl = String(activity?.url || '').trim();
   const urls = [];
@@ -213,36 +432,22 @@ async function fetchCrunchyrollWatchData(activity) {
   const uniqueUrls = [...new Set(urls)];
 
   for (const url of uniqueUrls) {
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'user-agent': 'Elias/1.0',
-          'accept-language': 'en-US,en;q=0.9'
-        },
-        signal: AbortSignal.timeout(6000),
-        redirect: 'follow'
-      });
-
-      if (!response.ok) continue;
-
-      const html = await response.text();
-      const structured = extractJsonLdEpisodes(html);
-      const explicit = extractExplicitSeasonEpisodeFromHtml(html);
-      const episodeTitle = structured?.title || extractEpisodeTitleFromHtml(html);
-
-      if (structured?.season || structured?.episode || explicit) {
-        return {
-          season: structured?.season || explicit?.season || null,
-          episode: structured?.episode || explicit?.episode || null,
-          episodeTitle
-        };
-      }
-    } catch {
-      // Public page lookup is only a fallback; Discord activity data still works without it.
-    }
+    const result = await resolveEpisodeFromCrunchyrollPage(url);
+    if (result) return result;
   }
 
-  return null;
+  const title = String(activity?.details || '').trim();
+  const episodeTitle = [
+    String(activity?.state || '').trim(),
+    getActivityAssetText(activity, 'largeText'),
+    getActivityAssetText(activity, 'large_text'),
+    getActivityAssetText(activity, 'smallText'),
+    getActivityAssetText(activity, 'small_text')
+  ]
+    .map(cleanEpisodeTitle)
+    .find((value) => value && value !== title && !parseSeasonEpisode(value));
+
+  return searchCrunchyrollForEpisode(title, episodeTitle);
 }
 
 function parseWatchInfo(activity) {
@@ -252,22 +457,19 @@ function parseWatchInfo(activity) {
   const largeText = getActivityAssetText(activity, 'largeText') || getActivityAssetText(activity, 'large_text');
   const smallText = getActivityAssetText(activity, 'smallText') || getActivityAssetText(activity, 'small_text');
 
-  const seasonEpisode = [state, largeText, smallText, details]
-    .map(parseSeasonEpisode)
-    .find(Boolean) || null;
-
+  const episodeMetadata = extractActivitySeasonEpisode(activity) || {};
   const isCrunchyrollName = /^crunchyroll$/i.test(name) || /crunchyroll/i.test(name);
   const title = (isCrunchyrollName ? details : name) || details || 'Unknown anime';
 
   const episodeTitle = [state, largeText, smallText]
-    .map((value) => cleanEpisodeTitle(value))
-    .find((value) => value && !/^S\d+\s*(?:•|·)\s*E\d+$/i.test(value) && !/^S\d+\s*E\d+$/i.test(value) && !/^crunchyroll$/i.test(value) && value !== title) || null;
+    .map(cleanEpisodeTitle)
+    .find((value) => value && value !== title && !parseSeasonEpisode(value) && !/^crunchyroll$/i.test(value)) || null;
 
   return {
     title: title.replace(/^crunchyroll$/i, 'Unknown anime').trim(),
     episodeTitle,
-    season: seasonEpisode?.season || null,
-    episode: seasonEpisode?.episode || null
+    season: episodeMetadata.season || null,
+    episode: episodeMetadata.episode || null
   };
 }
 
@@ -276,7 +478,7 @@ async function resolveWatchInfo(activity) {
 
   if (local.season && local.episode) return local;
 
-  const remote = await fetchCrunchyrollWatchData(activity);
+  const remote = await fetchCrunchyrollWatchData(activity, local);
   if (!remote) return local;
 
   return {
@@ -289,7 +491,6 @@ async function resolveWatchInfo(activity) {
 
 function buildCurrentlyWatchingEmbed({ memberName, activity, watchInfo }) {
   const { title, episodeTitle, season, episode } = watchInfo;
-
   const descriptionLines = [];
 
   if (episodeTitle && episodeTitle !== title) {
