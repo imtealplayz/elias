@@ -73,10 +73,10 @@ function parseSeasonEpisode(value) {
   const text = String(value || '').trim();
   if (!text) return null;
 
-  // Crunchyroll's Discord Rich Presence uses the Sx • Ey format.
-  // Also accept the compact SxEy form shown by some activity payloads.
-  const match = text.match(/^S(\d+)\s*(?:•|·)\s*E(\d+)$/i) ||
-    text.match(/^S(\d+)\s*E(\d+)$/i);
+  // Only accept an explicit Sx • Ey / SxEy pattern.
+  // Do not scan arbitrary numeric fields from the activity object.
+  const match = text.match(/\bS(\d+)\s*(?:•|·)\s*E(\d+)\b/i) ||
+    text.match(/\bS(\d+)\s*E(\d+)\b/i);
 
   if (!match) return null;
   return { season: match[1], episode: match[2] };
@@ -94,20 +94,36 @@ function cleanEpisodeTitle(value) {
   return cleaned || null;
 }
 
+function getActivityAssetText(activity, key) {
+  const value = activity?.assets?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function parseWatchInfo(activity) {
   const name = String(activity?.name || '').trim();
   const details = String(activity?.details || '').trim();
   const state = String(activity?.state || '').trim();
+  const largeText = getActivityAssetText(activity, 'largeText') || getActivityAssetText(activity, 'large_text');
+  const smallText = getActivityAssetText(activity, 'smallText') || getActivityAssetText(activity, 'small_text');
 
-  const seasonEpisode = parseSeasonEpisode(state);
+  // Crunchyroll/Discord can place Sx • Ey in a textual activity field such as
+  // state or asset hover text. Search only those known metadata strings.
+  const seasonEpisode = [state, largeText, smallText, details]
+    .map(parseSeasonEpisode)
+    .find(Boolean) || null;
+
   const isCrunchyrollName = /^crunchyroll$/i.test(name) || /crunchyroll/i.test(name);
-
   const title = (isCrunchyrollName ? details : name) || details || 'Unknown anime';
-  const episodeTitle = cleanEpisodeTitle(details) || null;
+
+  // Prefer a state/asset text as the episode title when it is not itself the
+  // Sx • Ey marker. This prevents the anime title from being duplicated.
+  const episodeTitle = [state, largeText, smallText]
+    .map((value) => cleanEpisodeTitle(value))
+    .find((value) => value && !/^S\d+\s*(?:•|·)\s*E\d+$/i.test(value) && !/^S\d+\s*E\d+$/i.test(value) && !/^crunchyroll$/i.test(value) && value !== title) || null;
 
   return {
     title: title.replace(/^crunchyroll$/i, 'Unknown anime').trim(),
-    episodeTitle: episodeTitle && !/^crunchyroll$/i.test(episodeTitle) ? episodeTitle : null,
+    episodeTitle,
     season: seasonEpisode?.season || null,
     episode: seasonEpisode?.episode || null
   };
@@ -117,17 +133,18 @@ function buildCurrentlyWatchingEmbed({ memberName, activity }) {
   const { title, episodeTitle, season, episode } = parseWatchInfo(activity);
 
   const embed = new EmbedBuilder()
-    .setColor(0xF47521)
+    .setColor(0x00C2B8)
     .setAuthor({ name: `${memberName} is currently watching` })
     .setTitle(title)
     .setDescription([
       episodeTitle ? `**${episodeTitle}**` : null,
       '📺 Currently watching on Crunchyroll'
     ].filter(Boolean).join('\n'))
-    .addFields(
-      { name: 'Season', value: season ? `Season ${season}` : 'Unknown', inline: true },
-      { name: 'Episode', value: episode ? `Episode ${episode}` : 'Unknown', inline: true }
-    )
+    .addFields({
+      name: 'Episode',
+      value: season && episode ? `S${season} • E${episode}` : 'Unknown',
+      inline: true
+    })
     .setFooter({ text: 'Crunchyroll' });
 
   const assets = activity.assets;
