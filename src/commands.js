@@ -68,22 +68,24 @@ function getCrunchyrollActivity(message) {
 }
 
 function parseWatchInfo(activity) {
-  const values = [activity?.details, activity?.state, activity?.name].filter(Boolean).map(String);
-  const combined = values.join(' • ');
+  const details = String(activity?.details || '').trim();
+  const state = String(activity?.state || '').trim();
+  const combined = [details, state, activity?.name].filter(Boolean).map(String).join(' • ');
 
-  const seasonMatch = combined.match(/\bseason\s*(\d+)\b/i) || combined.match(/\bs(\d+)\b/i);
-  const episodeMatch = combined.match(/\bepisode\s*(\d+)\b/i) || combined.match(/\bep\.?\s*(\d+)\b/i) || combined.match(/\bep(\d+)\b/i);
+  const seasonEpisodeMatch = combined.match(/\bS\s*(\d+)\s*E\s*(\d+)\b/i);
+  const seasonMatch = seasonEpisodeMatch
+    ? null
+    : combined.match(/\bseason\s*(\d+)\b/i) || combined.match(/\bS\s*(\d+)\b/i);
+  const episodeMatch = seasonEpisodeMatch
+    ? null
+    : combined.match(/\bepisode\s*(\d+)\b/i) || combined.match(/\bep\.?\s*(\d+)\b/i);
 
-  const season = seasonMatch?.[1] || null;
-  const episode = episodeMatch?.[1] || null;
+  const season = seasonEpisodeMatch?.[1] || seasonMatch?.[1] || null;
+  const episode = seasonEpisodeMatch?.[2] || episodeMatch?.[1] || null;
+  const title = String(activity?.name || 'Unknown anime').trim() || 'Unknown anime';
+  const episodeTitle = details || null;
 
-  let title = activity?.details || activity?.name || 'Unknown anime';
-  title = String(title)
-    .replace(/\s*[•|·]\s*(?:season|s)\s*\d+\s*[•|·-]?\s*(?:episode|ep)\s*\d+.*$/i, '')
-    .replace(/^watching\s+/i, '')
-    .trim();
-
-  return { title, season, episode };
+  return { title, episodeTitle, season, episode };
 }
 
 async function handleCurrentlyWatching(message) {
@@ -97,14 +99,17 @@ async function handleCurrentlyWatching(message) {
     return true;
   }
 
-  const { title, season, episode } = parseWatchInfo(activity);
+  const { title, episodeTitle, season, episode } = parseWatchInfo(activity);
   const memberName = message.member?.displayName || message.author.globalName || message.author.username;
 
   const embed = new EmbedBuilder()
     .setColor(0xF47521)
     .setAuthor({ name: `${memberName} is currently watching` })
     .setTitle(title)
-    .setDescription('📺 Currently watching on Crunchyroll')
+    .setDescription([
+      episodeTitle ? `**${episodeTitle}**` : null,
+      '📺 Currently watching on Crunchyroll'
+    ].filter(Boolean).join('\n'))
     .addFields(
       { name: 'Season', value: season ? `Season ${season}` : 'Unknown', inline: true },
       { name: 'Episode', value: episode ? `Episode ${episode}` : 'Unknown', inline: true }
