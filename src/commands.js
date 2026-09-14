@@ -67,23 +67,104 @@ function getCrunchyrollActivity(message) {
   });
 }
 
+function collectActivityStrings(value, seen = new Set(), depth = 0) {
+  if (depth > 3 || value == null) return [];
+  if (typeof value === 'string') return [value];
+  if (typeof value !== 'object' || seen.has(value)) return [];
+
+  seen.add(value);
+  const strings = [];
+  for (const child of Object.values(value)) {
+    strings.push(...collectActivityStrings(child, seen, depth + 1));
+  }
+  return strings;
+}
+
+function parseSeasonEpisode(text) {
+  const value = String(text || '').trim();
+  if (!value) return null;
+
+  const compact = value.match(/\bS\s*(\d+)\s*[-–—·•:/|]?\s*E\s*(\d+)\b/i);
+  if (compact) return { season: compact[1], episode: compact[2], match: compact[0] };
+
+  const named = value.match(/\bSeason\s*(\d+)\s*(?:[-–—·•:/|]|and)?\s*Episode\s*(\d+)\b/i);
+  if (named) return { season: named[1], episode: named[2], match: named[0] };
+
+  const xFormat = value.match(/\b(\d+)\s*[x×]\s*(\d+)\b/i);
+  if (xFormat) return { season: xFormat[1], episode: xFormat[2], match: xFormat[0] };
+
+  return null;
+}
+
+function cleanEpisodeTitle(value, seasonEpisodeMatch) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  let cleaned = text;
+  if (seasonEpisodeMatch?.match) {
+    cleaned = cleaned.replace(seasonEpisodeMatch.match, '').trim();
+  }
+
+  cleaned = cleaned
+    .replace(/^[•·|:/–—-]+\s*/, '')
+    .replace(/[•·|]+\s*$/, '')
+    .trim();
+
+  return cleaned || null;
+}
+
 function parseWatchInfo(activity) {
+  const name = String(activity?.name || '').trim();
   const details = String(activity?.details || '').trim();
   const state = String(activity?.state || '').trim();
-  const combined = [details, state, activity?.name].filter(Boolean).map(String).join(' • ');
+  const allStrings = [
+    name,
+    details,
+    state,
+    ...collectActivityStrings(activity)
+  ].filter(Boolean);
 
-  const seasonEpisodeMatch = combined.match(/\bS\s*(\d+)\s*E\s*(\d+)\b/i);
-  const seasonMatch = seasonEpisodeMatch
-    ? null
-    : combined.match(/\bseason\s*(\d+)\b/i) || combined.match(/\bS\s*(\d+)\b/i);
-  const episodeMatch = seasonEpisodeMatch
-    ? null
-    : combined.match(/\bepisode\s*(\d+)\b/i) || combined.match(/\bep\.?\s*(\d+)\b/i);
+  let season = null;
+  let episode = null;
+  let seasonEpisodeMatch = null;
 
-  const season = seasonEpisodeMatch?.[1] || seasonMatch?.[1] || null;
-  const episode = seasonEpisodeMatch?.[2] || episodeMatch?.[1] || null;
-  const title = String(activity?.name || 'Unknown anime').trim() || 'Unknown anime';
-  const episodeTitle = details || null;
+  for (const value of allStrings) {
+    const match = parseSeasonEpisode(value);
+    if (!match) continue;
+    season = match.season;
+    episode = match.episode;
+    seasonEpisodeMatch = { ...match, source: value };
+    break;
+  }
+
+  const isCrunchyrollName = /crunchyroll/i.test(name);
+  const titleCandidates = isCrunchyrollName
+    ? [details, state, ...allStrings]
+    : [name, details, state, ...allStrings];
+
+  const title = titleCandidates
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => !/^crunchyroll$/i.test(value))
+    .filter((value) => !parseSeasonEpisode(value))
+    .find((value) => !/^watching$/i.test(value)) || 'Unknown anime';
+
+  const episodeTitleCandidates = [state, details, ...allStrings]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => value !== title)
+    .filter((value) => !/^crunchyroll$/i.test(value))
+    .filter((value) => !/^watching$/i.test(value));
+
+  let episodeTitle = null;
+  for (const value of episodeTitleCandidates) {
+    const match = parseSeasonEpisode(value);
+    const cleaned = cleanEpisodeTitle(value, match);
+    if (!cleaned) continue;
+    if (/^(?:season|episode)\s*\d+$/i.test(cleaned)) continue;
+    episodeTitle = cleaned;
+    break;
+  }
 
   return { title, episodeTitle, season, episode };
 }
