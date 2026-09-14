@@ -1,0 +1,39 @@
+name: Temporary CRC message fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Fix CRC no-history message'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update message
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/commands.js')
+          text = path.read_text()
+          old = "I can't see you watching anything on Crunchyroll right now, and I don't have a previous watch saved."
+          new = "You need to watch something first, then use .crc or /crc so I can save your watch history."
+          if old not in text:
+              raise SystemExit('Target message was not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Commit and clean up
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/tmp-crc-message-fix.yml
+          git add src/commands.js .github/workflows/tmp-crc-message-fix.yml
+          git commit -m "Fix CRC no-history message"
+          git push
