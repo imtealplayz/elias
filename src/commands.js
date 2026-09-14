@@ -34,7 +34,7 @@ function helpText() {
     `${code(`${config.prefix}unblock [#channel]`)} — remove BLOCKED mode`,
     `${code(`${config.prefix}channels`)} — show configured channels`,
     `${code('.afk [reason]')} — set your AFK status`,
-    `${code('.cc')} — show what you're currently watching on Crunchyroll`,
+    `${code('.crc')} — show what you're currently watching on Crunchyroll`,
     `${code(`${config.prefix}memory`)} — DM your stored memories`,
     `${code(`${config.prefix}forget`)} — delete all of your stored memories`,
     `${code(`${config.prefix}help`)} — show this help`
@@ -99,21 +99,21 @@ async function handleCurrentlyWatching(message) {
 
   const { title, season, episode } = parseWatchInfo(activity);
   const memberName = message.member?.displayName || message.author.globalName || message.author.username;
-  const episodeInfo = [
-    season ? `Season ${season}` : null,
-    episode ? `Episode ${episode}` : null
-  ].filter(Boolean).join(' • ');
 
   const embed = new EmbedBuilder()
     .setColor(0xF47521)
     .setAuthor({ name: `${memberName} is currently watching` })
     .setTitle(title)
-    .setDescription(episodeInfo || 'Currently watching on Crunchyroll')
+    .setDescription('📺 Currently watching on Crunchyroll')
+    .addFields(
+      { name: 'Season', value: season ? `Season ${season}` : 'Unknown', inline: true },
+      { name: 'Episode', value: episode ? `Episode ${episode}` : 'Unknown', inline: true }
+    )
     .setFooter({ text: 'Crunchyroll' });
 
   const assets = activity.assets;
   const largeImage = assets?.largeImageURL?.() || assets?.largeImage?.url || assets?.largeImage;
-  if (largeImage) embed.setImage(largeImage);
+  if (largeImage) embed.setThumbnail(largeImage);
 
   await message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
   return true;
@@ -121,18 +121,18 @@ async function handleCurrentlyWatching(message) {
 
 export async function handleCommand(message) {
   const isAfkCommand = /^\.afk(?:\s|$)/i.test(message.content);
-  const isCcCommand = /^\.cc(?:\s|$)/i.test(message.content);
+  const isCrcCommand = /^\.crc(?:\s|$)/i.test(message.content);
   const body = isAfkCommand
     ? message.content.slice(4).trim()
-    : isCcCommand
-      ? message.content.slice(3).trim()
+    : isCrcCommand
+      ? message.content.slice(4).trim()
       : message.content.slice(config.prefix.length).trim();
   const [command] = body.split(/\s+/);
-  const name = isAfkCommand ? 'afk' : isCcCommand ? 'cc' : command?.toLowerCase();
+  const name = isAfkCommand ? 'afk' : isCrcCommand ? 'crc' : command?.toLowerCase();
 
   if (!name) return true;
 
-  if (name === 'cc') {
+  if (name === 'crc') {
     return handleCurrentlyWatching(message);
   }
 
