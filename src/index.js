@@ -329,15 +329,21 @@ async function respondToMessage(message, mode) {
     await saveMemories(config.guildId, message.author.id, explicitMemories);
   }
 
-  const saved = await saveMessage({
-    guildId: config.guildId,
-    channelId: message.channelId,
-    discordId: message.author.id,
-    username: message.author.username,
-    displayName: message.member?.displayName || message.author.globalName || message.author.username,
-    role: 'user',
-    content
-  });
+  let saved = false;
+  try {
+    await upsertUser(message.author);
+    await saveMessage({
+      guildId: config.guildId,
+      channelId: message.channelId,
+      userId: message.author.id,
+      username: message.author.username,
+      content,
+      isBot: false
+    });
+    saved = true;
+  } catch (error) {
+    console.error('Failed to save user message; continuing with AI reply:', error?.message || error);
+  }
 
   const result = await generateReplyWithFallback({
     user: message.author,
@@ -352,26 +358,33 @@ async function respondToMessage(message, mode) {
   const reply = typeof result === 'string' ? result : result?.reply;
   if (!reply) throw new Error('AI returned an empty reply.');
 
+  await sendLongReply(message, reply);
+
   const generatedMemories = typeof result === 'object' && Array.isArray(result.memories)
     ? mergeMemories(result.memories)
     : [];
 
   if (generatedMemories.length) {
-    await saveMemories(config.guildId, message.author.id, generatedMemories);
+    try {
+      await saveMemories(config.guildId, message.author.id, generatedMemories);
+    } catch (error) {
+      console.error('Failed to save generated memories:', error?.message || error);
+    }
   }
 
-  await sendLongReply(message, reply);
-
   if (saved) {
-    await saveMessage({
-      guildId: config.guildId,
-      channelId: message.channelId,
-      discordId: client.user.id,
-      username: client.user.username,
-      displayName: client.user.displayName || client.user.username,
-      role: 'assistant',
-      content: reply
-    });
+    try {
+      await saveMessage({
+        guildId: config.guildId,
+        channelId: message.channelId,
+        userId: client.user.id,
+        username: client.user.username,
+        content: reply,
+        isBot: true
+      });
+    } catch (error) {
+      console.error('Failed to save assistant message:', error?.message || error);
+    }
   }
 }
 
