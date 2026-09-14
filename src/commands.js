@@ -556,7 +556,7 @@ async function replyCurrentlyWatching(target, activity) {
 
     if (!lastWatch) {
       await target.reply({
-        content: 'I can\'t see you watching anything on Crunchyroll right now, and I don\'t have a previous watch saved.',
+        content: 'You need to watch something first, then use .crc or /crc so I can save your watch history.',
         allowedMentions: { repliedUser: false }
       });
       return true;
