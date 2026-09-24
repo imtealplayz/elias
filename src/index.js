@@ -20,6 +20,7 @@ import { summarizeMessages } from './summarize.js';
 import { handleCommand } from './commands.js';
 import { handleTicTacToeInteraction, isTicTacToeRequest, startTicTacToe } from './games/tictactoe.js';
 import { containsDiscordInviteLink } from './link-filter.js';
+import { handleStocksChatInput, handleStocksInteraction, registerStockCommands } from './stocks.js';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences],
@@ -434,6 +435,8 @@ client.on('messageCreate', async (message) => {
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    if (await handleStocksChatInput(interaction)) return;
+    if (await handleStocksInteraction(interaction)) return;
     if (isTicTacToeRequest(interaction)) {
       await startTicTacToe(interaction);
       return;
@@ -444,8 +447,15 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+  try {
+    const guild = await client.guilds.fetch(config.guildId);
+    await registerStockCommands(guild);
+    console.log('Stock commands registered.');
+  } catch (error) {
+    console.error('Failed to register stock commands:', error);
+  }
 });
 
 client.login(config.token);
