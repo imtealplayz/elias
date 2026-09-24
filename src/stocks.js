@@ -96,7 +96,10 @@ export async function registerStockCommands(client, legacyGuildId) {
   const commands = [
     new SlashCommandBuilder()
       .setName('stocks')
-      .setDescription('View the demo stock market')
+      .setDescription('Stock market commands')
+      .addSubcommand((sub) => sub
+        .setName('view')
+        .setDescription('View the demo stock market'))
       .addSubcommand((sub) => sub
         .setName('buy')
         .setDescription('Buy stocks')
@@ -233,20 +236,28 @@ export async function handleStocksChatInput(interaction) {
       }
       return true;
     }
-    await interaction.deferReply();
-    try {
-      const stocks = await getStocks();
-      await interaction.editReply({
-        flags: MessageFlags.IsComponentsV2,
-        components: buildStocksComponents(stocks)
-      });
-    } catch (error) {
-      console.error('Stock market load error:', error?.message || error);
-      await interaction.editReply({
-        flags: MessageFlags.IsComponentsV2,
-        components: [new ContainerBuilder().addTextDisplayComponents(text('❌ The stock market database is not available yet. Run the stock section of `supabase/schema.sql` once, then try again.'))]
-      });
+    if (subcommand === 'view') {
+      await interaction.deferReply();
+      try {
+        const stocks = await getStocks();
+        await interaction.editReply({
+          flags: MessageFlags.IsComponentsV2,
+          components: buildStocksComponents(stocks)
+        });
+      } catch (error) {
+        console.error('Stock market load error:', error?.message || error);
+        await interaction.editReply({
+          flags: MessageFlags.IsComponentsV2,
+          components: [new ContainerBuilder().addTextDisplayComponents(text('❌ The stock market database is not available yet. Run the stock section of `supabase/schema.sql` once, then try again.'))]
+        });
+      }
+      return true;
     }
+
+    await interaction.reply({
+      content: '❌ Use `/stocks view`, `/stocks buy`, `/stocks sell`, or `/stocks reset`.'
+      ephemeral: true
+    });
     return true;
   }
 
