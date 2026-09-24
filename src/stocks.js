@@ -107,12 +107,16 @@ export async function registerStockCommands(client, legacyGuildId) {
     else await client.application.commands.create(commandData);
   }
 
+  // Keep a guild-local copy in the configured test guild so changes are available
+  // immediately there while Discord propagates the global commands.
   if (legacyGuildId) {
-    const legacyGuild = await client.guilds.fetch(legacyGuildId);
-    const legacyCommands = await legacyGuild.commands.fetch();
-    for (const commandName of ['stocks', 'portfolio']) {
-      const legacyCommand = legacyCommands.find((command) => command.name === commandName);
-      if (legacyCommand) await legacyCommand.delete();
+    const testGuild = await client.guilds.fetch(legacyGuildId);
+    const testGuildCommands = await testGuild.commands.fetch();
+
+    for (const commandData of commands) {
+      const existing = testGuildCommands.find((command) => command.name === commandData.name);
+      if (existing) await existing.edit(commandData);
+      else await testGuild.commands.create(commandData);
     }
   }
 }
