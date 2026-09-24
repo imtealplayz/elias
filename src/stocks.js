@@ -100,13 +100,33 @@ export async function handleStocksChatInput(interaction) {
   if (!interaction.isChatInputCommand()) return false;
 
   if (interaction.commandName === 'stocks') {
-    const stocks = await getStocks();
-    await interaction.reply({ embeds: [buildStocksEmbed(stocks)], components: [buildButtons()] });
+    await interaction.deferReply();
+    try {
+      const stocks = await getStocks();
+      await interaction.editReply({ embeds: [buildStocksEmbed(stocks)], components: [buildButtons()] });
+    } catch (error) {
+      console.error('Stock market load error:', error?.message || error);
+      await interaction.editReply({
+        content: '❌ The stock market database is not available yet. Run the stock section of supabase/schema.sql once, then try again.',
+        embeds: [],
+        components: []
+      });
+    }
     return true;
   }
 
   if (interaction.commandName === 'portfolio') {
-    const portfolio = await getUserPortfolio(interaction.user.id);
+    await interaction.deferReply({ ephemeral: true });
+    let portfolio;
+    try {
+      portfolio = await getUserPortfolio(interaction.user.id);
+    } catch (error) {
+      console.error('Portfolio load error:', error?.message || error);
+      await interaction.editReply({
+        content: '❌ The stock market database is not available yet. Run the stock section of supabase/schema.sql once, then try again.'
+      });
+      return true;
+    }
     const lines = portfolio.map((item) => {
       const value = Number(item.quantity) * Number(item.price);
       return '**' + item.symbol + '** — ' + item.quantity + ' owned • ' +
@@ -119,7 +139,7 @@ export async function handleStocksChatInput(interaction) {
       .setTitle('💼 Portfolio')
       .setDescription(['------------', portfolio.length ? lines.join('\n') : 'You do not own any stocks yet.', '------------'].join('\n'))
       .setFooter({ text: portfolio.length + ' stock type(s) owned • Total value: ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL });
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.editReply({ embeds: [embed] });
     return true;
   }
 
@@ -137,8 +157,13 @@ export async function handleStocksInteraction(interaction) {
       return true;
     }
     if (interaction.customId === 'stocks:refresh') {
-      const stocks = await getStocks();
-      await interaction.update({ embeds: [buildStocksEmbed(stocks)], components: [buildButtons()] });
+      await interaction.deferUpdate();
+      try {
+        const stocks = await getStocks();
+        await interaction.editReply({ embeds: [buildStocksEmbed(stocks)], components: [buildButtons()] });
+      } catch (error) {
+        console.error('Stock refresh error:', error?.message || error);
+      }
       return true;
     }
   }
@@ -159,18 +184,18 @@ export async function handleStocksInteraction(interaction) {
       return true;
     }
 
+    await interaction.deferReply({ ephemeral: true });
     try {
       const result = await buyStock(interaction.user.id, symbol, quantity);
-      await interaction.reply({
-        content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** at **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '** each. Total value: **' + Number(result.totalValue).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.',
-        ephemeral: true
+      await interaction.editReply({
+        content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** at **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '** each. Total value: **' + Number(result.totalValue).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
       });
     } catch (error) {
       console.error('Stock purchase error:', error?.message || error);
       const message = error?.message === 'STOCK_NOT_FOUND'
         ? '❌ That stock does not exist. Check `/stocks` for the current symbols.'
         : '❌ I could not complete that purchase. Try again.';
-      await interaction.reply({ content: message, ephemeral: true });
+      await interaction.editReply({ content: message });
     }
     return true;
   }
@@ -181,11 +206,11 @@ export async function handleStocksInteraction(interaction) {
       return true;
     }
 
+    await interaction.deferReply({ ephemeral: true });
     try {
       const result = await sellStock(interaction.user.id, symbol, quantity);
-      await interaction.reply({
-        content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** at **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '** each. Total value: **' + Number(result.totalValue).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.',
-        ephemeral: true
+      await interaction.editReply({
+        content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** at **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '** each. Total value: **' + Number(result.totalValue).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
       });
     } catch (error) {
       console.error('Stock sale error:', error?.message || error);
