@@ -451,7 +451,7 @@ client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
     const guild = await client.guilds.fetch(config.guildId);
-    await registerStockCommands(guild);
+    await registerStockCommands(client, config.guildId);
     console.log('Stock commands registered.');
   } catch (error) {
     console.error('Failed to register stock commands:', error);
