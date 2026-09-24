@@ -143,20 +143,25 @@ export async function registerStockCommands(client, legacyGuildId) {
   // instead of relying on per-command create/edit calls.
   const globalCommands = await client.application.commands.set(commands);
 
-  // Keep the configured test guild in sync for immediate testing, but do not
-  // let a missing/inaccessible GUILD_ID prevent global commands from registering.
-  if (legacyGuildId) {
+  // Also sync these commands into every guild Elias is currently in.
+  // Guild commands appear immediately, which avoids waiting for global command propagation.
+  let guildsSynced = 0;
+  let guildsFailed = 0;
+
+  for (const guild of client.guilds.cache.values()) {
     try {
-      const testGuild = await client.guilds.fetch(legacyGuildId);
-      const testGuildCommands = await testGuild.commands.fetch();
+      const guildCommands = await guild.commands.fetch();
 
       for (const commandData of commands) {
-        const existing = testGuildCommands.find((command) => command.name === commandData.name);
+        const existing = guildCommands.find((command) => command.name === commandData.name);
         if (existing) await existing.edit(commandData);
-        else await testGuild.commands.create(commandData);
+        else await guild.commands.create(commandData);
       }
+
+      guildsSynced++;
     } catch (error) {
-      console.warn('Could not sync stock commands to GUILD_ID; global stock commands are still registered:', error?.message || error);
+      guildsFailed++;
+      console.warn(`Could not sync stock commands to guild ${guild.id}; global stock commands are still registered:`, error?.message || error);
     }
   }
 
@@ -164,7 +169,7 @@ export async function registerStockCommands(client, legacyGuildId) {
     `Registered global stock commands: ${globalCommands
       .filter((command) => command.name === 'stocks' || command.name === 'portfolio')
       .map((command) => command.name)
-      .join(', ')}`
+      .join(', ')}. Guilds synced: ${guildsSynced}, failed: ${guildsFailed}.`
   );
 }
 
