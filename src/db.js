@@ -300,7 +300,7 @@ export async function buyStock(discordId, symbol, quantity) {
   }
 
   const oldPrice = Number(stock.price);
-  const priceIncrease = oldPrice * (Number(quantity) / Number(stock.total_supply)) * 0.5;
+  const priceIncrease = Number((oldPrice * (Number(quantity) / Number(stock.total_supply)) * 0.5).toFixed(2));
   const newPrice = Math.max(0.01, Number((oldPrice + priceIncrease).toFixed(2)));
   await request('stocks', {
     method: 'PATCH',
@@ -346,7 +346,7 @@ export async function sellStock(discordId, symbol, quantity) {
   }
 
   const oldPrice = Number(stock.price);
-  const priceDecrease = oldPrice * (Number(quantity) / Number(stock.total_supply)) * 0.5;
+  const priceDecrease = Number((oldPrice * (Number(quantity) / Number(stock.total_supply)) * 0.5).toFixed(2));
   const newPrice = Math.max(0.01, Number((oldPrice - priceDecrease).toFixed(2)));
   await request('stocks', {
     method: 'PATCH',
