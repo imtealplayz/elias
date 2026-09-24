@@ -90,35 +90,46 @@ export async function registerStockCommands(client, legacyGuildId) {
     new SlashCommandBuilder()
       .setName('stocks')
       .setDescription('View the demo stock market')
-      .addSubcommand((sub) => sub.setName('buy').setDescription('Buy stocks').addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Amount to buy (1-10)').setMinValue(1).setMaxValue(10).setRequired(true)).addStringOption((o) => o.setName('password').setDescription('Buy password').setRequired(true)))
-      .addSubcommand((sub) => sub.setName('sell').setDescription('Sell stocks').addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Amount to sell').setMinValue(1).setRequired(true)))
+      .addSubcommand((sub) => sub
+        .setName('buy')
+        .setDescription('Buy stocks')
+        .addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true))
+        .addIntegerOption((o) => o.setName('amount').setDescription('Amount to buy (1-10)').setMinValue(1).setMaxValue(10).setRequired(true))
+        .addStringOption((o) => o.setName('password').setDescription('Buy password').setRequired(true)))
+      .addSubcommand((sub) => sub
+        .setName('sell')
+        .setDescription('Sell stocks')
+        .addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true))
+        .addIntegerOption((o) => o.setName('amount').setDescription('Amount to sell').setMinValue(1).setRequired(true)))
       .toJSON(),
     new SlashCommandBuilder()
       .setName('portfolio')
       .setDescription('View a stock portfolio')
-      .addUserOption((option) => option.setName('user').setDescription('User whose portfolio you want to view').setRequired(false))
+      .addUserOption((option) => option
+        .setName('user')
+        .setDescription('User whose portfolio you want to view')
+        .setRequired(false))
       .toJSON()
   ];
 
-  const existingGlobalCommands = await client.application.commands.fetch();
-  for (const commandData of commands) {
-    const existing = existingGlobalCommands.find((command) => command.name === commandData.name);
-    if (existing) await existing.edit(commandData);
-    else await client.application.commands.create(commandData);
-  }
+  // Publish these commands at application level.
+  // Using set() replaces the stock commands as one atomic global registration
+  // instead of relying on per-command create/edit calls.
+  const globalCommands = await client.application.commands.set(commands);
 
-  // Keep a guild-local copy in the configured test guild so changes are available
-  // immediately there while Discord propagates the global commands.
+  // Also keep the configured test guild in sync for immediate testing while
+  // Discord propagates the global commands.
   if (legacyGuildId) {
     const testGuild = await client.guilds.fetch(legacyGuildId);
-    const testGuildCommands = await testGuild.commands.fetch();
-
-    for (const commandData of commands) {
-      const existing = testGuildCommands.find((command) => command.name === commandData.name);
-      if (existing) await existing.edit(commandData);
-      else await testGuild.commands.create(commandData);
-    }
+    await testGuild.commands.set(commands);
   }
+
+  console.log(
+    `Registered global stock commands: ${globalCommands
+      .filter((command) => command.name === 'stocks' || command.name === 'portfolio')
+      .map((command) => command.name)
+      .join(', ')}`
+  );
 }
 
 export async function handleStocksChatInput(interaction) {
