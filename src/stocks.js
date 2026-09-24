@@ -2,8 +2,13 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
+  ContainerBuilder,
+  MessageFlags,
   ModalBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  SlashCommandBuilder,
+  TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle
 } from 'discord.js';
@@ -13,24 +18,14 @@ const STOCK_PASSWORD = 'zip123';
 const MAX_BUY_QUANTITY = 10;
 const STOCK_CURRENCY_LABEL = 'Robux';
 
-function buildStocksEmbed(stocks) {
-  const lines = stocks.length
-    ? stocks.map((stock) => '**' + stock.symbol + '** — ' + Number(stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL)
-    : ['No stocks are configured yet.'];
+function divider() {
+  return new SeparatorBuilder()
+    .setDivider(true)
+    .setSpacing(SeparatorSpacingSize.Small);
+}
 
-  return new EmbedBuilder()
-    .setColor(0x00C2B8)
-    .setTitle('📈 Stock Market')
-    .setDescription([
-      '------------',
-      '**Available Stocks:** ' + stocks.length,
-      '',
-      ...lines,
-      '',
-      '------------',
-      'Use the buttons below to buy or sell stocks.'
-    ].join('\n'))
-    .setFooter({ text: 'Demo market • Prices currently start at 75 Robux' });
+function text(content) {
+  return new TextDisplayBuilder().setContent(content);
 }
 
 function buildButtons() {
@@ -39,6 +34,55 @@ function buildButtons() {
     new ButtonBuilder().setCustomId('stocks:sell').setLabel('Sell Stocks').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('stocks:refresh').setLabel('Refresh').setStyle(ButtonStyle.Secondary)
   );
+}
+
+function buildStocksComponents(stocks) {
+  const rows = stocks.length
+    ? stocks.map((stock) => {
+        return '**' + stock.symbol + '** — ' + Number(stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL +
+          ' each • ' + stock.available + '/' + stock.totalSupply + ' available';
+      })
+    : ['No stocks are configured yet.'];
+
+  const container = new ContainerBuilder()
+    .setAccentColor(0x00C2B8)
+    .addTextDisplayComponents(text('# 📈 Stock Market'))
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(text(rows.join('\n')))
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(text('Each stock has **150 total shares**. Buying increases its price; selling decreases it.'))
+    .addSeparatorComponents(divider())
+    .addActionRowComponents(buildButtons());
+
+  return [container];
+}
+
+function buildPortfolioComponents(user, portfolio) {
+  const lines = portfolio.map((item) => {
+    const value = Number(item.quantity) * Number(item.price);
+    return '**' + item.symbol + '** — ' + item.quantity + ' owned • ' +
+      Number(item.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + ' each • ' +
+      value.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + ' total';
+  });
+  const totalValue = portfolio.reduce(
+    (sum, item) => sum + Number(item.quantity) * Number(item.price),
+    0
+  );
+
+  const description = portfolio.length
+    ? lines.join('\n')
+    : 'No stocks owned.';
+
+  const container = new ContainerBuilder()
+    .setAccentColor(0x00C2B8)
+    .addTextDisplayComponents(text('## 💼 Stock Portfolio'))
+    .addTextDisplayComponents(text('**Holder:** <@' + user.id + '>'))
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(text(description))
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(text('**Total portfolio value:** ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL));
+
+  return [container];
 }
 
 function buildBuyModal() {
@@ -83,12 +127,19 @@ function normalizeSymbol(value) {
 }
 
 export async function registerStockCommands(guild) {
-  const existingCommands = await guild.commands.fetch();
   const commands = [
-    { name: 'stocks', description: 'View the demo stock market' },
-    { name: 'portfolio', description: 'View your stock portfolio' }
+    new SlashCommandBuilder()
+      .setName('stocks')
+      .setDescription('View the demo stock market')
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName('portfolio')
+      .setDescription('View a stock portfolio')
+      .addUserOption((option) => option.setName('user').setDescription('User whose portfolio you want to view').setRequired(false))
+      .toJSON()
   ];
 
+  const existingCommands = await guild.commands.fetch();
   for (const commandData of commands) {
     const existing = existingCommands.find((command) => command.name === commandData.name);
     if (existing) await existing.edit(commandData);
@@ -103,43 +154,36 @@ export async function handleStocksChatInput(interaction) {
     await interaction.deferReply();
     try {
       const stocks = await getStocks();
-      await interaction.editReply({ embeds: [buildStocksEmbed(stocks)], components: [buildButtons()] });
+      await interaction.editReply({
+        flags: MessageFlags.IsComponentsV2,
+        components: buildStocksComponents(stocks)
+      });
     } catch (error) {
       console.error('Stock market load error:', error?.message || error);
       await interaction.editReply({
-        content: '❌ The stock market database is not available yet. Run the stock section of supabase/schema.sql once, then try again.',
-        embeds: [],
-        components: []
+        flags: MessageFlags.IsComponentsV2,
+        components: [new ContainerBuilder().addTextDisplayComponents(text('❌ The stock market database is not available yet. Run the stock section of `supabase/schema.sql` once, then try again.'))]
       });
     }
     return true;
   }
 
   if (interaction.commandName === 'portfolio') {
-    await interaction.deferReply({ ephemeral: true });
-    let portfolio;
+    const targetUser = interaction.options.getUser('user') || interaction.user;
+    await interaction.deferReply();
     try {
-      portfolio = await getUserPortfolio(interaction.user.id);
+      const portfolio = await getUserPortfolio(targetUser.id);
+      await interaction.editReply({
+        flags: MessageFlags.IsComponentsV2,
+        components: buildPortfolioComponents(targetUser, portfolio)
+      });
     } catch (error) {
       console.error('Portfolio load error:', error?.message || error);
       await interaction.editReply({
-        content: '❌ The stock market database is not available yet. Run the stock section of supabase/schema.sql once, then try again.'
+        flags: MessageFlags.IsComponentsV2,
+        components: [new ContainerBuilder().addTextDisplayComponents(text('❌ The stock market database is not available yet. Run the stock section of `supabase/schema.sql` once, then try again.'))]
       });
-      return true;
     }
-    const lines = portfolio.map((item) => {
-      const value = Number(item.quantity) * Number(item.price);
-      return '**' + item.symbol + '** — ' + item.quantity + ' owned • ' +
-        Number(item.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + ' each • ' +
-        value.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + ' total';
-    });
-    const totalValue = portfolio.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
-    const embed = new EmbedBuilder()
-      .setColor(0x00C2B8)
-      .setTitle('💼 Portfolio')
-      .setDescription(['------------', portfolio.length ? lines.join('\n') : 'You do not own any stocks yet.', '------------'].join('\n'))
-      .setFooter({ text: portfolio.length + ' stock type(s) owned • Total value: ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL });
-    await interaction.editReply({ embeds: [embed] });
     return true;
   }
 
@@ -160,7 +204,10 @@ export async function handleStocksInteraction(interaction) {
       await interaction.deferUpdate();
       try {
         const stocks = await getStocks();
-        await interaction.editReply({ embeds: [buildStocksEmbed(stocks)], components: [buildButtons()] });
+        await interaction.editReply({
+          flags: MessageFlags.IsComponentsV2,
+          components: buildStocksComponents(stocks)
+        });
       } catch (error) {
         console.error('Stock refresh error:', error?.message || error);
       }
@@ -179,22 +226,24 @@ export async function handleStocksInteraction(interaction) {
       await interaction.reply({ content: '❌ Incorrect password.', ephemeral: true });
       return true;
     }
-    if (!parseQuantity(interaction.fields.getTextInputValue('stock-quantity'), MAX_BUY_QUANTITY)) {
+
+    const buyQuantity = parseQuantity(interaction.fields.getTextInputValue('stock-quantity'), MAX_BUY_QUANTITY);
+    if (!buyQuantity) {
       await interaction.reply({ content: '❌ You can buy between 1 and 10 stocks per purchase.', ephemeral: true });
       return true;
     }
 
     await interaction.deferReply({ ephemeral: true });
     try {
-      const result = await buyStock(interaction.user.id, symbol, quantity);
+      const result = await buyStock(interaction.user.id, symbol, buyQuantity);
       await interaction.editReply({
-        content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** at **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '** each. Total value: **' + Number(result.totalValue).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
+        content: '✅ Bought **' + buyQuantity + ' ' + result.stock.symbol + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
       });
     } catch (error) {
       console.error('Stock purchase error:', error?.message || error);
-      const message = error?.message === 'STOCK_NOT_FOUND'
-        ? '❌ That stock does not exist. Check `/stocks` for the current symbols.'
-        : '❌ I could not complete that purchase. Try again.';
+      let message = '❌ I could not complete that purchase. Try again.';
+      if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks` for the current symbols.';
+      if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left.';
       await interaction.editReply({ content: message });
     }
     return true;
@@ -210,7 +259,7 @@ export async function handleStocksInteraction(interaction) {
     try {
       const result = await sellStock(interaction.user.id, symbol, quantity);
       await interaction.editReply({
-        content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** at **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '** each. Total value: **' + Number(result.totalValue).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
+        content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
       });
     } catch (error) {
       console.error('Stock sale error:', error?.message || error);
