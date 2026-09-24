@@ -121,7 +121,13 @@ export async function registerStockCommands(client, legacyGuildId) {
   // Discord propagates the global commands.
   if (legacyGuildId) {
     const testGuild = await client.guilds.fetch(legacyGuildId);
-    await testGuild.commands.set(commands);
+    const testGuildCommands = await testGuild.commands.fetch();
+
+    for (const commandData of commands) {
+      const existing = testGuildCommands.find((command) => command.name === commandData.name);
+      if (existing) await existing.edit(commandData);
+      else await testGuild.commands.create(commandData);
+    }
   }
 
   console.log(
