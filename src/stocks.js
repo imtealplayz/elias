@@ -4,7 +4,6 @@ import {
   ButtonStyle,
   ContainerBuilder,
   MessageFlags,
-  ModalBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   SlashCommandBuilder,
@@ -43,6 +42,8 @@ function buildStocksComponents(stocks) {
     .addSeparatorComponents(divider())
     .addTextDisplayComponents(text('Each stock has **150 total shares**. Buying increases its price; selling decreases it.'))
     .addSeparatorComponents(divider())
+    .addTextDisplayComponents(text('Use **/stocks buy** to buy shares or **/stocks sell** to sell shares.'))
+    .addSeparatorComponents(divider())
     .addActionRowComponents(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('stocks:refresh').setLabel('Refresh').setStyle(ButtonStyle.Secondary)));
 
   return [container];
@@ -60,22 +61,27 @@ function buildPortfolioComponents(user, portfolio) {
     0
   );
 
-  const description = portfolio.length
-    ? lines.join('\n')
-    : 'No stocks owned.';
-
   const container = new ContainerBuilder()
     .setAccentColor(0x00C2B8)
     .addTextDisplayComponents(text('## 💼 Stock Portfolio'))
     .addTextDisplayComponents(text('**Holder:** <@' + user.id + '>'))
-    .addSeparatorComponents(divider())
-    .addTextDisplayComponents(text(description))
+    .addSeparatorComponents(divider());
+
+  if (portfolio.length) {
+    portfolio.forEach((item, index) => {
+      if (index > 0) container.addSeparatorComponents(divider());
+      container.addTextDisplayComponents(text(lines[index]));
+    });
+  } else {
+    container.addTextDisplayComponents(text('No stocks owned.'));
+  }
+
+  container
     .addSeparatorComponents(divider())
     .addTextDisplayComponents(text('**Total portfolio value:** ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL));
 
   return [container];
 }
-
 function parseQuantity(value, max = Number.MAX_SAFE_INTEGER) {
   const quantity = Number.parseInt(String(value || '').trim(), 10);
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > max) return null;
@@ -94,13 +100,29 @@ export async function registerStockCommands(client, legacyGuildId) {
       .addSubcommand((sub) => sub
         .setName('buy')
         .setDescription('Buy stocks')
-        .addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true))
+        .addStringOption((o) => o
+          .setName('symbol')
+          .setDescription('Stock symbol')
+          .setRequired(true)
+          .addChoices(
+            { name: 'ELIAS', value: 'ELIAS' },
+            { name: 'NOVA', value: 'NOVA' },
+            { name: 'BYTE', value: 'BYTE' }
+          ))
         .addIntegerOption((o) => o.setName('amount').setDescription('Amount to buy (1-10)').setMinValue(1).setMaxValue(10).setRequired(true))
         .addStringOption((o) => o.setName('password').setDescription('Buy password').setRequired(true)))
       .addSubcommand((sub) => sub
         .setName('sell')
         .setDescription('Sell stocks')
-        .addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true))
+        .addStringOption((o) => o
+          .setName('symbol')
+          .setDescription('Stock symbol')
+          .setRequired(true)
+          .addChoices(
+            { name: 'ELIAS', value: 'ELIAS' },
+            { name: 'NOVA', value: 'NOVA' },
+            { name: 'BYTE', value: 'BYTE' }
+          ))
         .addIntegerOption((o) => o.setName('amount').setDescription('Amount to sell').setMinValue(1).setRequired(true)))
       .addSubcommand((sub) => sub
         .setName('reset')
