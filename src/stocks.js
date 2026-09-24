@@ -10,11 +10,12 @@ import {
   SlashCommandBuilder,
   TextDisplayBuilder
 } from 'discord.js';
-import { buyStock, getStocks, getUserPortfolio, sellStock } from './db.js';
+import { buyStock, getStocks, getUserPortfolio, resetStocks, sellStock } from './db.js';
 
 const STOCK_PASSWORD = 'zip123';
 const MAX_BUY_QUANTITY = 10;
 const STOCK_CURRENCY_LABEL = 'Robux';
+const STOCK_OWNER_ID = '926063716057894953';
 
 function divider() {
   return new SeparatorBuilder()
@@ -101,6 +102,9 @@ export async function registerStockCommands(client, legacyGuildId) {
         .setDescription('Sell stocks')
         .addStringOption((o) => o.setName('symbol').setDescription('Stock symbol').setRequired(true))
         .addIntegerOption((o) => o.setName('amount').setDescription('Amount to sell').setMinValue(1).setRequired(true)))
+      .addSubcommand((sub) => sub
+        .setName('reset')
+        .setDescription('Reset the entire stock market and all portfolios'))
       .toJSON(),
     new SlashCommandBuilder()
       .setName('portfolio')
@@ -147,6 +151,26 @@ export async function handleStocksChatInput(interaction) {
 
   if (interaction.commandName === 'stocks') {
     const subcommand = interaction.options.getSubcommand(false);
+
+    if (subcommand === 'reset') {
+      if (interaction.user.id !== STOCK_OWNER_ID) {
+        await interaction.reply({ content: '❌ You are not allowed to reset the stock market.', ephemeral: true });
+        return true;
+      }
+
+      await interaction.deferReply({ ephemeral: true });
+      try {
+        await resetStocks();
+        await interaction.editReply({
+          content: '✅ Stock market reset. All stock prices are back to **75.00 Robux**, supply is restored to **150 shares each**, and all portfolios have been cleared.'
+        });
+      } catch (error) {
+        console.error('Stock reset error:', error?.message || error);
+        await interaction.editReply({ content: '❌ I could not reset the stock market. Check the bot logs.' });
+      }
+      return true;
+    }
+
     if (subcommand === 'buy' || subcommand === 'sell') {
       const symbol = normalizeSymbol(interaction.options.getString('symbol'));
       const quantity = interaction.options.getInteger('amount');
