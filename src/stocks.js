@@ -217,7 +217,7 @@ export async function handleStocksInteraction(interaction) {
       let message = '❌ I could not complete that sale. Try again.';
       if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks` for the current symbols.';
       if (error?.message === 'INSUFFICIENT_SHARES') message = '❌ You do not own enough of that stock to sell that amount.';
-      await interaction.reply({ content: message, ephemeral: true });
+      await interaction.editReply({ content: message });
     }
     return true;
   }
