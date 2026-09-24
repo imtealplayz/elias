@@ -82,8 +82,16 @@ create table if not exists public.stocks (
   symbol text not null unique,
   name text not null,
   price numeric(12,2) not null default 75.00 check (price >= 0),
+  total_supply integer not null default 150 check (total_supply > 0),
   created_at timestamptz not null default now()
 );
+
+alter table public.stocks
+  add column if not exists total_supply integer not null default 150;
+
+update public.stocks
+set total_supply = 150
+where total_supply is null or total_supply <> 150;
 
 create table if not exists public.stock_holdings (
   discord_id text not null,
