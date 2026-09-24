@@ -85,7 +85,7 @@ function normalizeSymbol(value) {
   return String(value || '').trim().toUpperCase();
 }
 
-export async function registerStockCommands(guild) {
+export async function registerStockCommands(client, legacyGuildId) {
   const commands = [
     new SlashCommandBuilder()
       .setName('stocks')
@@ -100,11 +100,20 @@ export async function registerStockCommands(guild) {
       .toJSON()
   ];
 
-  const existingCommands = await guild.commands.fetch();
+  const existingGlobalCommands = await client.application.commands.fetch();
   for (const commandData of commands) {
-    const existing = existingCommands.find((command) => command.name === commandData.name);
+    const existing = existingGlobalCommands.find((command) => command.name === commandData.name);
     if (existing) await existing.edit(commandData);
-    else await guild.commands.create(commandData);
+    else await client.application.commands.create(commandData);
+  }
+
+  if (legacyGuildId) {
+    const legacyGuild = await client.guilds.fetch(legacyGuildId);
+    const legacyCommands = await legacyGuild.commands.fetch();
+    for (const commandName of ['stocks', 'portfolio']) {
+      const legacyCommand = legacyCommands.find((command) => command.name === commandName);
+      if (legacyCommand) await legacyCommand.delete();
+    }
   }
 }
 
