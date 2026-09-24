@@ -211,6 +211,26 @@ export async function removeAfk(guildId, discordId) {
   return rows?.[0] || null;
 }
 
+export async function resetStocks() {
+  await request('stock_holdings', {
+    method: 'DELETE',
+    query: '?stock_id=not.is.null',
+    prefer: 'return=minimal'
+  });
+
+  await request('stocks', {
+    method: 'PATCH',
+    query: '?id=gt.0',
+    body: {
+      price: 75,
+      total_supply: 150
+    },
+    prefer: 'return=minimal'
+  });
+
+  return true;
+}
+
 export async function getStocks() {
   const stocks = await request('stocks', {
     query: '?select=id,symbol,name,price,total_supply&order=id.asc'
