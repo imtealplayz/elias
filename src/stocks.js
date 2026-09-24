@@ -4,6 +4,7 @@ import {
   ButtonStyle,
   ContainerBuilder,
   MessageFlags,
+  PermissionFlagsBits,
   SeparatorBuilder,
   SeparatorSpacingSize,
   SlashCommandBuilder,
@@ -183,8 +184,13 @@ export async function handleStocksChatInput(interaction) {
     const subcommand = interaction.options.getSubcommand(false);
 
     if (subcommand === 'reset') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({ content: '❌ Only server administrators can use this command.', ephemeral: true });
+        return true;
+      }
+
       if (interaction.user.id !== STOCK_OWNER_ID) {
-        await interaction.reply({ content: '❌ You are not allowed to reset the stock market.', ephemeral: true });
+        await interaction.reply({ content: '❌ Only the stock market owner can reset the stock market.', ephemeral: true });
         return true;
       }
 
@@ -255,7 +261,7 @@ export async function handleStocksChatInput(interaction) {
     }
 
     await interaction.reply({
-      content: '❌ Use `/stocks view`, `/stocks buy`, `/stocks sell`, or `/stocks reset`.'
+      content: '❌ Use `/stocks view`, `/stocks buy`, `/stocks sell`, or `/stocks reset`.',
       ephemeral: true
     });
     return true;
