@@ -8,9 +8,7 @@ import {
   SeparatorBuilder,
   SeparatorSpacingSize,
   SlashCommandBuilder,
-  TextDisplayBuilder,
-  TextInputBuilder,
-  TextInputStyle
+  TextDisplayBuilder
 } from 'discord.js';
 import { buyStock, getStocks, getUserPortfolio, sellStock } from './db.js';
 
@@ -71,42 +69,10 @@ function buildPortfolioComponents(user, portfolio) {
     .addTextDisplayComponents(text('**Holder:** <@' + user.id + '>'))
     .addSeparatorComponents(divider())
     .addTextDisplayComponents(text(description))
-    .addSeparatorComponents(divider());
     .addSeparatorComponents(divider())
     .addTextDisplayComponents(text('**Total portfolio value:** ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL));
 
   return [container];
-}
-
-function buildBuyModal() {
-  return new ModalBuilder()
-    .setCustomId('stocks:buy-modal')
-    .setTitle('Buy Stocks')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('stock-symbol').setLabel('Stock symbol').setPlaceholder('e.g. ELIAS').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(12)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('stock-quantity').setLabel('Amount (1-10)').setPlaceholder('1').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('stock-password').setLabel('Password').setPlaceholder('Enter the buy password').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(64)
-      )
-    );
-}
-
-function buildSellModal() {
-  return new ModalBuilder()
-    .setCustomId('stocks:sell-modal')
-    .setTitle('Sell Stocks')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('stock-symbol').setLabel('Stock symbol').setPlaceholder('e.g. ELIAS').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(12)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('stock-quantity').setLabel('Amount').setPlaceholder('1').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(6)
-      )
-    );
 }
 
 function parseQuantity(value, max = Number.MAX_SAFE_INTEGER) {
@@ -222,82 +188,16 @@ export async function handleStocksChatInput(interaction) {
 }
 
 export async function handleStocksInteraction(interaction) {
-  if (interaction.isButton()) {
-    if (interaction.customId === 'stocks:buy') {
-      await interaction.showModal(buildBuyModal());
-      return true;
-    }
-    if (interaction.customId === 'stocks:sell') {
-      await interaction.showModal(buildSellModal());
-      return true;
-    }
-    if (interaction.customId === 'stocks:refresh') {
-      await interaction.deferUpdate();
-      try {
-        const stocks = await getStocks();
-        await interaction.editReply({
-          flags: MessageFlags.IsComponentsV2,
-          components: buildStocksComponents(stocks)
-        });
-      } catch (error) {
-        console.error('Stock refresh error:', error?.message || error);
-      }
-      return true;
-    }
-  }
-
-  if (!interaction.isModalSubmit()) return false;
-
-  const symbol = normalizeSymbol(interaction.fields.getTextInputValue('stock-symbol'));
-  const quantity = parseQuantity(interaction.fields.getTextInputValue('stock-quantity'));
-
-  if (interaction.customId === 'stocks:buy-modal') {
-    const password = interaction.fields.getTextInputValue('stock-password').trim();
-    if (password !== STOCK_PASSWORD) {
-      await interaction.reply({ content: '❌ Incorrect password.', ephemeral: true });
-      return true;
-    }
-
-    const buyQuantity = parseQuantity(interaction.fields.getTextInputValue('stock-quantity'), MAX_BUY_QUANTITY);
-    if (!buyQuantity) {
-      await interaction.reply({ content: '❌ You can buy between 1 and 10 stocks per purchase.', ephemeral: true });
-      return true;
-    }
-
-    await interaction.deferReply({ ephemeral: true });
+  if (interaction.isButton() && interaction.customId === 'stocks:refresh') {
+    await interaction.deferUpdate();
     try {
-      const result = await buyStock(interaction.user.id, symbol, buyQuantity);
+      const stocks = await getStocks();
       await interaction.editReply({
-        content: '✅ Bought **' + buyQuantity + ' ' + result.stock.symbol + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
+        flags: MessageFlags.IsComponentsV2,
+        components: buildStocksComponents(stocks)
       });
     } catch (error) {
-      console.error('Stock purchase error:', error?.message || error);
-      let message = '❌ I could not complete that purchase. Try again.';
-      if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks` for the current symbols.';
-      if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left.';
-      await interaction.editReply({ content: message });
-    }
-    return true;
-  }
-
-  if (interaction.customId === 'stocks:sell-modal') {
-    if (!quantity) {
-      await interaction.reply({ content: '❌ Enter a valid amount greater than 0.', ephemeral: true });
-      return true;
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-    try {
-      const result = await sellStock(interaction.user.id, symbol, quantity);
-      await interaction.editReply({
-        content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.'
-      });
-    } catch (error) {
-      console.error('Stock sale error:', error?.message || error);
-      let message = '❌ I could not complete that sale. Try again.';
-      if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks` for the current symbols.';
-      if (error?.message === 'INSUFFICIENT_SHARES') message = '❌ You do not own enough of that stock to sell that amount.';
-      await interaction.editReply({ content: message });
+      console.error('Stock refresh error:', error?.message || error);
     }
     return true;
   }
