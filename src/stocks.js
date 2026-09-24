@@ -117,16 +117,20 @@ export async function registerStockCommands(client, legacyGuildId) {
   // instead of relying on per-command create/edit calls.
   const globalCommands = await client.application.commands.set(commands);
 
-  // Also keep the configured test guild in sync for immediate testing while
-  // Discord propagates the global commands.
+  // Keep the configured test guild in sync for immediate testing, but do not
+  // let a missing/inaccessible GUILD_ID prevent global commands from registering.
   if (legacyGuildId) {
-    const testGuild = await client.guilds.fetch(legacyGuildId);
-    const testGuildCommands = await testGuild.commands.fetch();
+    try {
+      const testGuild = await client.guilds.fetch(legacyGuildId);
+      const testGuildCommands = await testGuild.commands.fetch();
 
-    for (const commandData of commands) {
-      const existing = testGuildCommands.find((command) => command.name === commandData.name);
-      if (existing) await existing.edit(commandData);
-      else await testGuild.commands.create(commandData);
+      for (const commandData of commands) {
+        const existing = testGuildCommands.find((command) => command.name === commandData.name);
+        if (existing) await existing.edit(commandData);
+        else await testGuild.commands.create(commandData);
+      }
+    } catch (error) {
+      console.warn('Could not sync stock commands to GUILD_ID; global stock commands are still registered:', error?.message || error);
     }
   }
 
