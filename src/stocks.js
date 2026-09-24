@@ -147,25 +147,26 @@ export async function registerStockCommands(client, legacyGuildId) {
   // instead of relying on per-command create/edit calls.
   const globalCommands = await client.application.commands.set(commands);
 
-  // Also sync these commands into every guild Elias is currently in.
-  // Guild commands appear immediately, which avoids waiting for global command propagation.
-  let guildsSynced = 0;
+  // Remove only the old guild-local stock commands so there is one global
+  // command instead of duplicate guild + global versions. All other Elias
+  // guild commands are left untouched.
+  let guildsCleaned = 0;
   let guildsFailed = 0;
 
   for (const guild of client.guilds.cache.values()) {
     try {
       const guildCommands = await guild.commands.fetch();
 
-      for (const commandData of commands) {
-        const existing = guildCommands.find((command) => command.name === commandData.name);
-        if (existing) await existing.edit(commandData);
-        else await guild.commands.create(commandData);
+      for (const command of guildCommands.values()) {
+        if (command.name === 'stocks' || command.name === 'portfolio') {
+          await command.delete();
+        }
       }
 
-      guildsSynced++;
+      guildsCleaned++;
     } catch (error) {
       guildsFailed++;
-      console.warn(`Could not sync stock commands to guild ${guild.id}; global stock commands are still registered:`, error?.message || error);
+      console.warn(`Could not remove old stock guild commands from guild ${guild.id}:`, error?.message || error);
     }
   }
 
@@ -173,7 +174,7 @@ export async function registerStockCommands(client, legacyGuildId) {
     `Registered global stock commands: ${globalCommands
       .filter((command) => command.name === 'stocks' || command.name === 'portfolio')
       .map((command) => command.name)
-      .join(', ')}. Guilds synced: ${guildsSynced}, failed: ${guildsFailed}.`
+      .join(', ')}. Old guild stock commands removed from ${guildsCleaned} guild(s), failed: ${guildsFailed}.`
   );
 }
 
