@@ -450,9 +450,8 @@ client.on('interactionCreate', async (interaction) => {
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
-    const guild = await client.guilds.fetch(config.guildId);
     await registerStockCommands(client, config.guildId);
-    console.log('Stock commands registered.');
+    console.log('Stock commands registered globally.');
   } catch (error) {
     console.error('Failed to register stock commands:', error);
   }
