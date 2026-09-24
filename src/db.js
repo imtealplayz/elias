@@ -210,3 +210,84 @@ export async function removeAfk(guildId, discordId) {
   });
   return rows?.[0] || null;
 }
+
+export async function getStocks() {
+  return request('stocks', {
+    query: '?select=id,symbol,name,price&order=id.asc'
+  });
+}
+
+export async function getUserPortfolio(discordId) {
+  return request('stock_holdings', {
+    query: '?select=stock_id,quantity,stocks(symbol,name,price)&discord_id=eq.' + encode(discordId) + '&order=stock_id.asc'
+  }).then((rows) => (rows || []).map((row) => ({
+    stockId: row.stock_id,
+    quantity: Number(row.quantity),
+    symbol: row.stocks?.symbol || 'UNKNOWN',
+    name: row.stocks?.name || 'Unknown Stock',
+    price: Number(row.stocks?.price || 0)
+  }))
+  );
+}
+
+export async function buyStock(discordId, symbol, quantity) {
+  const stocks = await request('stocks', {
+    query: '?select=id,symbol,name,price&symbol=eq.' + encode(symbol) + '&limit=1'
+  });
+  const stock = stocks?.[0];
+  if (!stock) throw new Error('STOCK_NOT_FOUND');
+
+  const existing = await request('stock_holdings', {
+    query: '?select=stock_id,quantity&discord_id=eq.' + encode(discordId) + '&stock_id=eq.' + encode(stock.id) + '&limit=1'
+  });
+  const currentQuantity = Number(existing?.[0]?.quantity || 0);
+  const newQuantity = currentQuantity + Number(quantity);
+
+  if (existing?.[0]) {
+    await request('stock_holdings', {
+      method: 'PATCH',
+      query: '?discord_id=eq.' + encode(discordId) + '&stock_id=eq.' + encode(stock.id),
+      body: { quantity: newQuantity },
+      prefer: 'return=minimal'
+    });
+  } else {
+    await request('stock_holdings', {
+      method: 'POST',
+      body: [{ discord_id: discordId, stock_id: stock.id, quantity: Number(quantity) }],
+      prefer: 'return=minimal'
+    });
+  }
+
+  return { stock, quantity: newQuantity, totalValue: newQuantity * Number(stock.price) };
+}
+
+export async function sellStock(discordId, symbol, quantity) {
+  const stocks = await request('stocks', {
+    query: '?select=id,symbol,name,price&symbol=eq.' + encode(symbol) + '&limit=1'
+  });
+  const stock = stocks?.[0];
+  if (!stock) throw new Error('STOCK_NOT_FOUND');
+
+  const existing = await request('stock_holdings', {
+    query: '?select=stock_id,quantity&discord_id=eq.' + encode(discordId) + '&stock_id=eq.' + encode(stock.id) + '&limit=1'
+  });
+  const currentQuantity = Number(existing?.[0]?.quantity || 0);
+  if (currentQuantity < Number(quantity)) throw new Error('INSUFFICIENT_SHARES');
+
+  const newQuantity = currentQuantity - Number(quantity);
+  if (newQuantity === 0) {
+    await request('stock_holdings', {
+      method: 'DELETE',
+      query: '?discord_id=eq.' + encode(discordId) + '&stock_id=eq.' + encode(stock.id)
+    });
+  } else {
+    await request('stock_holdings', {
+      method: 'PATCH',
+      query: '?discord_id=eq.' + encode(discordId) + '&stock_id=eq.' + encode(stock.id),
+      body: { quantity: newQuantity },
+      prefer: 'return=minimal'
+    });
+  }
+
+  return { stock, quantity: Number(quantity), totalValue: Number(quantity) * Number(stock.price) };
+}
