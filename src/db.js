@@ -212,30 +212,51 @@ export async function removeAfk(guildId, discordId) {
 }
 
 export async function getStocks() {
-  return request('stocks', {
-    query: '?select=id,symbol,name,price&order=id.asc'
+  const stocks = await request('stocks', {
+    query: '?select=id,symbol,name,price,total_supply&order=id.asc'
   });
+  const holdings = await request('stock_holdings', {
+    query: '?select=stock_id,quantity'
+  });
+  const totals = new Map();
+  for (const row of holdings || []) {
+    totals.set(row.stock_id, (totals.get(row.stock_id) || 0) + Number(row.quantity || 0));
+  }
+  return (stocks || []).map((stock) => ({
+    ...stock,
+    price: Number(stock.price),
+    totalSupply: Number(stock.total_supply),
+    owned: totals.get(stock.id) || 0,
+    available: Math.max(0, Number(stock.total_supply) - (totals.get(stock.id) || 0))
+  }));
 }
 
 export async function getUserPortfolio(discordId) {
   return request('stock_holdings', {
-    query: '?select=stock_id,quantity,stocks(symbol,name,price)&discord_id=eq.' + encode(discordId) + '&order=stock_id.asc'
+    query: '?select=stock_id,quantity,stocks(symbol,name,price,total_supply)&discord_id=eq.' + encode(discordId) + '&order=stock_id.asc'
   }).then((rows) => (rows || []).map((row) => ({
     stockId: row.stock_id,
     quantity: Number(row.quantity),
     symbol: row.stocks?.symbol || 'UNKNOWN',
     name: row.stocks?.name || 'Unknown Stock',
-    price: Number(row.stocks?.price || 0)
-  }))
-  );
+    price: Number(row.stocks?.price || 0),
+    totalSupply: Number(row.stocks?.total_supply || 150)
+  })));
 }
 
 export async function buyStock(discordId, symbol, quantity) {
   const stocks = await request('stocks', {
-    query: '?select=id,symbol,name,price&symbol=eq.' + encode(symbol) + '&limit=1'
+    query: '?select=id,symbol,name,price,total_supply&symbol=eq.' + encode(symbol) + '&limit=1'
   });
   const stock = stocks?.[0];
   if (!stock) throw new Error('STOCK_NOT_FOUND');
+
+  const holdings = await request('stock_holdings', {
+    query: '?select=quantity&stock_id=eq.' + encode(stock.id)
+  });
+  const marketOwned = (holdings || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  const available = Number(stock.total_supply) - marketOwned;
+  if (Number(quantity) > available) throw new Error('INSUFFICIENT_SUPPLY');
 
   const existing = await request('stock_holdings', {
     query: '?select=stock_id,quantity&discord_id=eq.' + encode(discordId) + '&stock_id=eq.' + encode(stock.id) + '&limit=1'
@@ -258,12 +279,27 @@ export async function buyStock(discordId, symbol, quantity) {
     });
   }
 
-  return { stock, quantity: newQuantity, totalValue: newQuantity * Number(stock.price) };
+  const oldPrice = Number(stock.price);
+  const priceIncrease = oldPrice * (Number(quantity) / Number(stock.total_supply)) * 0.5;
+  const newPrice = Math.max(0.01, Number((oldPrice + priceIncrease).toFixed(2)));
+  await request('stocks', {
+    method: 'PATCH',
+    query: '?id=eq.' + encode(stock.id),
+    body: { price: newPrice },
+    prefer: 'return=minimal'
+  });
+
+  return {
+    stock: { ...stock, price: newPrice },
+    quantity: newQuantity,
+    totalValue: newQuantity * newPrice,
+    available: available - Number(quantity)
+  };
 }
 
 export async function sellStock(discordId, symbol, quantity) {
   const stocks = await request('stocks', {
-    query: '?select=id,symbol,name,price&symbol=eq.' + encode(symbol) + '&limit=1'
+    query: '?select=id,symbol,name,price,total_supply&symbol=eq.' + encode(symbol) + '&limit=1'
   });
   const stock = stocks?.[0];
   if (!stock) throw new Error('STOCK_NOT_FOUND');
@@ -289,5 +325,19 @@ export async function sellStock(discordId, symbol, quantity) {
     });
   }
 
-  return { stock, quantity: Number(quantity), totalValue: Number(quantity) * Number(stock.price) };
+  const oldPrice = Number(stock.price);
+  const priceDecrease = oldPrice * (Number(quantity) / Number(stock.total_supply)) * 0.5;
+  const newPrice = Math.max(0.01, Number((oldPrice - priceDecrease).toFixed(2)));
+  await request('stocks', {
+    method: 'PATCH',
+    query: '?id=eq.' + encode(stock.id),
+    body: { price: newPrice },
+    prefer: 'return=minimal'
+  });
+
+  return {
+    stock: { ...stock, price: newPrice },
+    quantity: Number(quantity),
+    totalValue: Number(quantity) * newPrice
+  };
 }
