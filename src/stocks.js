@@ -102,7 +102,7 @@ function normalizeSymbol(value) {
   return String(value || '').trim().toUpperCase();
 }
 
-export async function registerStockCommands(client, legacyGuildId) {
+export async function registerStockCommands(client, legacyGuildId, additionalCommands = []) {
   const commands = [
     new SlashCommandBuilder()
       .setName('stocks')
@@ -154,7 +154,13 @@ export async function registerStockCommands(client, legacyGuildId) {
   // Publish these commands at application level.
   // Using set() replaces the stock commands as one atomic global registration
   // instead of relying on per-command create/edit calls.
-  const globalCommands = await client.application.commands.set(commands);
+  const managedCommands = [...additionalCommands, ...commands];
+  const managedNames = new Set(managedCommands.map((command) => command.name));
+  const existingGlobal = await client.application.commands.fetch();
+  const untouchedGlobal = [...existingGlobal.values()]
+    .filter((command) => !managedNames.has(command.name))
+    .map((command) => command.toJSON());
+  const globalCommands = await client.application.commands.set([...untouchedGlobal, ...managedCommands]);
 
   // Remove only the old guild-local stock commands so there is one global
   // command instead of duplicate guild + global versions. All other Elias
@@ -167,7 +173,7 @@ export async function registerStockCommands(client, legacyGuildId) {
       const guildCommands = await guild.commands.fetch();
 
       for (const command of guildCommands.values()) {
-        if (command.name === 'stocks' || command.name === 'portfolio') {
+        if (managedNames.has(command.name)) {
           await command.delete();
         }
       }
@@ -180,10 +186,10 @@ export async function registerStockCommands(client, legacyGuildId) {
   }
 
   console.log(
-    `Registered global stock commands: ${globalCommands
-      .filter((command) => command.name === 'stocks' || command.name === 'portfolio')
+    `Registered global Elias economy/stock commands: ${globalCommands
+      .filter((command) => managedNames.has(command.name))
       .map((command) => command.name)
-      .join(', ')}. Old guild stock commands removed from ${guildsCleaned} guild(s), failed: ${guildsFailed}.`
+      .join(', ')}. Old guild-local managed commands removed from ${guildsCleaned} guild(s), failed: ${guildsFailed}.`
   );
 }
 
