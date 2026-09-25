@@ -1,3 +1,4 @@
+import { EmbedBuilder } from 'discord.js';
 import { config } from './config.js';
 import { request } from './db.js';
 
@@ -13,19 +14,11 @@ export const COLORS = {
 };
 
 export function baseEmbed(title, color = COLORS.gold) {
-  const { EmbedBuilder } = requireDiscord();
   return new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
     .setTimestamp()
     .setFooter({ text: 'Teal Economy • Elias' });
-}
-
-// Keep the wallet layer independent from command/game modules.
-function requireDiscord() {
-  // This function exists only to avoid making command/UI imports part of the
-  // low-level wallet API.
-  return globalThis.__eliasDiscord || {};
 }
 
 async function getUser(guildId, discordId) {
