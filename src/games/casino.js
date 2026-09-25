@@ -179,7 +179,7 @@ async function cmdSlots(interaction, userId, guildId, bet) {
     .addFields(
       { name: "Bet",    value: `${bet.toLocaleString()} ${R}`,                                                          inline: true },
       { name: winnings > 0 ? "Won" : "Lost", value: winnings > 0 ? `+${winDisplay}` : `-${bet.toLocaleString()} ${R}`, inline: true },
-      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`,                                 inline: true }
+      { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`,                                 inline: true }
     );
 
   await interaction.reply({ embeds: [embed] });
@@ -257,7 +257,7 @@ async function cmdCoinflip(interaction, userId, guildId, bet, choice) {
           .addFields(
             { name: "Your Pick", value: choiceFmt, inline: true },
             { name: won ? "Won" : "Lost", value: winStr, inline: true },
-            { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+            { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
           );
         await btn.editReply({ embeds: [embed], components: [] }).catch(() => {});
         endGame(guildId, userId);
@@ -364,7 +364,7 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
           .addFields(
             { name: "Your Bet", value: `\`${betType}\``, inline: true },
             { name: won ? "Won" : "Lost", value: winStr, inline: true },
-            { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+            { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
           );
 
         await btn.editReply({ embeds: [embed], components: [] }).catch(() => {});
@@ -430,7 +430,7 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
       .setDescription(`**Your Hand:** ${showHand(playerHand)} = **21**\n**Dealer:** ${showHand([dealerHand[0]])} + 🂠\n\n🎉 **BLACKJACK! ×2.5!**${bonusMsg}`)
       .addFields(
         { name: "Won",     value: `+${feeDisplay(gross, win)}${bjPayout !== win ? ` → **${bjPayout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.reply({ embeds: [embed] });
   }
@@ -447,7 +447,7 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
     .setDescription(`**Your Hand:** ${showHand(playerHand)} = **${pVal}**\n**Dealer:** ${showHand([dealerHand[0]])} + 🂠\n\nWhat will you do?`)
     .addFields(
       { name: "Bet",     value: `${bet.toLocaleString()} ${R}`,                         inline: true },
-      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+      { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
     );
 
   await interaction.reply({ embeds: [embed], components: [row] });
@@ -484,7 +484,7 @@ async function handleBlackjack(interaction) {
         .setDescription(`**Your Hand:** ${showHand(playerHand)} = **${pVal}** 💥 BUST!`)
         .addFields(
           { name: "Lost",    value: `-${bet.toLocaleString()} ${R}`, inline: true },
-          { name: "Balance", value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+          { name: "Balance", value: `${(await getBalance(guildId, user.id)).toLocaleString()} ${R}`, inline: true }
         );
       return interaction.editReply({ embeds: [embed], components: [] });
     }
@@ -549,7 +549,7 @@ async function resolveBlackjack(interaction, game) {
     .addFields(
       { name: "Bet",     value: `${bet.toLocaleString()} ${R}`, inline: true },
       { name: "Result",  value: winFieldVal,                    inline: true },
-      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+      { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
     );
 
   await interaction.editReply({ embeds: [embed], components: [] });
@@ -599,7 +599,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
       .setDescription(`The game crashed at **1.00×** before it even started! 💀`)
       .addFields(
         { name: "Lost",    value: `-${bet.toLocaleString()} ${R}`, inline: true },
-        { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.reply({ embeds: [instantEmbed] });
   }
@@ -637,7 +637,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
         .setDescription(`Crashed at **${crashPoint}×**! You lost your bet.${lossMsg}`)
         .addFields(
           { name: "Lost",    value: `-${bet.toLocaleString()} ${R}`, inline: true },
-          { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+          { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
         );
       return msg.edit({ embeds: [embed], components: [] }).catch(() => {});
     }
@@ -675,7 +675,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
       .setDescription(`You cashed out at **${current}×**!${bonusMsg}`)
       .addFields(
         { name: "Won",     value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
       );
     await msg.edit({ embeds: [embed], components: [] }).catch(() => {});
     collector.stop();
@@ -814,7 +814,7 @@ async function endMinesGame(interaction, game, hitMine, clearedBoard) {
   const resultEmbed = baseEmbed(title, color).setDescription(desc).addFields(
     { name: "Multiplier", value: `\`${mult}×\``,                                              inline: true },
     { name: hitMine ? "Lost" : "Won", value: winStr,                                           inline: true },
-    { name: "Balance",    value: `${await getBalance(game.guildId, game.userId).toLocaleString()} ${R}`, inline: true }
+    { name: "Balance",    value: `${(await getBalance(game.guildId, game.userId)).toLocaleString()} ${R}`, inline: true }
   );
 
   const revealedRows = buildMinesRows(game, true);
@@ -1003,7 +1003,7 @@ async function handleTowers(interaction) {
       .addFields(
         { name: "Multiplier", value: `\`${mult}×\``, inline: true },
         { name: "Won",        value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance",    value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance",    value: `${(await getBalance(guildId, user.id)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
   }
@@ -1024,7 +1024,7 @@ async function handleTowers(interaction) {
       .addFields(
         { name: "Floors Climbed", value: `\`${floor}\``,                                          inline: true },
         { name: "Lost",           value: `-${game.bet.toLocaleString()} ${R}`,                    inline: true },
-        { name: "Balance",        value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance",        value: `${(await getBalance(guildId, user.id)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
   }
@@ -1046,7 +1046,7 @@ async function handleTowers(interaction) {
       .addFields(
         { name: "Multiplier", value: `\`${mult}×\``, inline: true },
         { name: "Won",        value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance",    value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance",    value: `${(await getBalance(guildId, user.id)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
   }
@@ -1125,7 +1125,7 @@ async function cmdKeno(interaction, userId, guildId, bet, picks) {
           ? `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`,
         inline: true },
-      { name: "Balance",      value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true },
+      { name: "Balance",      value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true },
       { name: `Payouts (${chosen.length} picks)`, value: `\`${payoutPreview}\``, inline: false }
     );
 
@@ -1218,7 +1218,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
           ? `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`,
         inline: true },
-      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+      { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
     )
     .setTimestamp()
     .setFooter({ text: "🎰 Casino Bot" });
