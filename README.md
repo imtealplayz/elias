@@ -71,7 +71,6 @@ Optional:
 
 ```env
 GEMINI_MODEL=gemini-2.5-flash
-GEMINI_CLASSIFIER_MODEL=gemini-2.5-flash-lite
 GROQ_API_KEY=
 GROQ_MODEL=openai/gpt-oss-20b
 BOT_PREFIX=!
