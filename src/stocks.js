@@ -50,20 +50,25 @@ function buildStocksComponents(stocks) {
   return [container];
 }
 
-function buildPortfolioComponents(user, portfolio) {
+function buildPortfolioComponents(user, portfolio, balance) {
   const lines = portfolio.map((item) => {
     const value = Number(item.quantity) * Number(item.price);
     return '**' + item.symbol + '** — ' + item.quantity + ' owned • ' +
       Number(item.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + ' each • ' +
       value.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + ' total';
   });
+
   const totalValue = portfolio.reduce(
     (sum, item) => sum + Number(item.quantity) * Number(item.price),
     0
   );
+  const totalNetWorth = Number(balance) + totalValue;
 
   const container = new ContainerBuilder()
     .setAccentColor(0x00C2B8)
+    .addTextDisplayComponents(text('## 💰 Teal Wallet'))
+    .addTextDisplayComponents(text('**Balance:** ' + formatTeal(balance)))
+    .addSeparatorComponents(divider())
     .addTextDisplayComponents(text('## 💼 Stock Portfolio'))
     .addTextDisplayComponents(text('**Holder:** <@' + user.id + '>'))
     .addSeparatorComponents(divider());
@@ -79,7 +84,9 @@ function buildPortfolioComponents(user, portfolio) {
 
   container
     .addSeparatorComponents(divider())
-    .addTextDisplayComponents(text('**Total portfolio value:** ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL));
+    .addTextDisplayComponents(text('**Total stock value:** ' + totalValue.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL))
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(text('**Total net worth:** ' + totalNetWorth.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL));
 
   return [container];
 }
