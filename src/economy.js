@@ -80,6 +80,18 @@ function formatSigned(amount) {
   return value >= 0 ? `+${formatTeal(value)}` : `-${formatTeal(Math.abs(value))}`;
 }
 
+async function cmdBalance(interaction) {
+  const balance = await getBalance(interaction.guildId, interaction.user.id);
+
+  await interaction.reply({
+    embeds: [
+      baseEmbed('💰 Teal Balance', COLORS.teal)
+        .setDescription(`You have **${formatTeal(balance)}**.`)
+        .setThumbnail(interaction.user.displayAvatarURL())
+    ]
+  });
+}
+
 async function cmdLeaderboard(interaction) {
   const rows = await getLeaderboard(interaction.guildId, 10);
 
@@ -372,6 +384,10 @@ async function cmdResetBalance(interaction) {
 export function getEconomyCommands() {
   return [
     new SlashCommandBuilder()
+      .setName('balance')
+      .setDescription('View your Teal currency balance'),
+
+    new SlashCommandBuilder()
       .setName('leaderboard')
       .setDescription('View the richest Teal users'),
 
@@ -481,7 +497,7 @@ export async function handleEconomyChatInput(interaction) {
 
   const name = interaction.commandName;
   const economyCommands = new Set([
-    'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
+    'balance', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
     'unfreeze', 'slots', 'coinflip', 'roulette', 'blackjack', 'crash',
     'mines', 'towers', 'keno', 'limbo'
   ]);
@@ -514,6 +530,9 @@ export async function handleEconomyChatInput(interaction) {
     }
 
     switch (name) {
+      case 'balance':
+        await cmdBalance(interaction);
+        return true;
       case 'leaderboard':
         await cmdLeaderboard(interaction);
         return true;
