@@ -214,7 +214,7 @@ export async function handleStocksChatInput(interaction) {
       try {
         await resetStocks();
         await interaction.editReply({
-          content: '✅ Stock market reset. All stock prices are back to **75.00 Robux**, supply is restored to **150 shares each**, and all portfolios have been cleared.'
+          content: '✅ Stock market reset. All stock prices are back to **75.00 Teal**, supply is restored to **150 shares each**, and all portfolios have been cleared.'
         });
       } catch (error) {
         console.error('Stock reset error:', error?.message || error);
