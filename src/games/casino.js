@@ -287,14 +287,14 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
   if (!betType) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Bet Type", COLORS.red).setDescription("Options: `red` `black` `green` `even` `odd` or a number 0–36")], flags: MessageFlags.Ephemeral });
   }
-  startGame(guildId, userId, "Roulette");
-
   const bt = betType.toLowerCase();
   const validTypes = ["red","black","green","even","odd"];
   const isNumBet = !isNaN(parseInt(bt)) && parseInt(bt) >= 0 && parseInt(bt) <= 36;
   if (!validTypes.includes(bt) && !isNumBet) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Bet Type", COLORS.red).setDescription("Options: `red` `black` `green` `even` `odd` or a number 0–36")], flags: MessageFlags.Ephemeral });
   }
+
+  startGame(guildId, userId, "Roulette");
 
   const confirmEmbed = baseEmbed("🎡 Roulette — Confirm", COLORS.blue)
     .setDescription(`You're betting **${bet.toLocaleString()} ${R}** on **${betType}**.\n\nAre you sure?`);
@@ -1077,13 +1077,12 @@ async function cmdKeno(interaction, userId, guildId, bet, picks) {
   if (!picks) {
     return interaction.reply({ embeds: [baseEmbed("❌ No Picks", COLORS.red).setDescription(`Provide 2–10 numbers (1–80).`)], flags: MessageFlags.Ephemeral });
   }
-  startGame(guildId, userId, "Keno");
-
   const chosen = [...new Set(picks.split(",").map(n => parseInt(n.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 80))];
   if (chosen.length < 2 || chosen.length > 10) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Picks", COLORS.red).setDescription("Pick between **2 and 10** unique numbers between 1–80.")], flags: MessageFlags.Ephemeral });
   }
 
+  startGame(guildId, userId, "Keno");
   await removeBalance(guildId, userId, bet);
 
   // Draw 15 numbers from 1–80
