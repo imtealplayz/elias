@@ -52,7 +52,7 @@ export async function getUserPortfolio(discordId) {
     stockId: row.stock_id, quantity: Number(row.quantity),
     symbol: row.stocks?.symbol || 'UNKNOWN', name: row.stocks?.name || 'Unknown Stock',
     price: Number(row.stocks?.price || 0), totalSupply: Number(row.stocks?.total_supply || 150)
-  }))));
+  })));
 }
 
 export async function buyStock(discordId, symbol, quantity) {
