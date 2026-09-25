@@ -1,7 +1,7 @@
 {
   "name": "elias",
-  "version": "1.0.4",
-  "description": "A conversational Discord AI bot with persistent memory and channel-aware behavior.",
+  "version": "1.1.0",
+  "description": "A Discord bot for Teal currency and a server stock market.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -11,9 +11,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@google/genai": "^1.24.0",
     "discord.js": "^14.25.1",
-    "dotenv": "^17.2.2",
-    "groq-sdk": "^0.37.0"
+    "dotenv": "^17.2.2"
   }
 }
