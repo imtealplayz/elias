@@ -394,21 +394,6 @@ client.on('messageCreate', async (message) => {
 
     if (!addressed) return;
     await queueForChannel(message.channelId, () => respondToMessage(message));
-
-    if (mode === 'semi' && addressed) {
-      await queueForChannel(message.channelId, () => respondToMessage(message, mode));
-      return;
-    }
-    if (mode === 'semi' && !addressed) {
-      const history = await getRecentMessages(config.guildId, message.channelId, config.historyLimit);
-      const shouldReply = await decideSpontaneousReplyWithFallback({
-        user: message.author,
-        content,
-        history
-      });
-      if (!shouldReply) return;
-      await queueForChannel(message.channelId, () => respondToMessage(message, mode));
-    }
   } catch (error) {
     console.error('Message handler error:', error);
   }
