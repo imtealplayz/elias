@@ -480,8 +480,28 @@ export async function handleEconomyChatInput(interaction) {
   if (!checkGuild(interaction)) return false;
 
   const name = interaction.commandName;
+  const economyCommands = new Set([
+    'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
+    'unfreeze', 'slots', 'coinflip', 'roulette', 'blackjack', 'crash',
+    'mines', 'towers', 'keno', 'limbo'
+  ]);
+
+  if (!economyCommands.has(name)) return false;
 
   try {
+    // Acknowledge before any Supabase work so Discord cannot time out.
+    await interaction.deferReply();
+
+    // Existing command handlers use interaction.reply(). Route those replies
+    // to the already-acknowledged interaction without changing game logic.
+    const originalReply = interaction.reply.bind(interaction);
+    interaction.reply = async (options) => {
+      if (!interaction.deferred) return originalReply(options);
+      const payload = { ...options };
+      delete payload.ephemeral;
+      delete payload.flags;
+      return interaction.editReply(payload);
+    };
     if (['slots', 'coinflip', 'roulette', 'blackjack', 'crash', 'mines', 'towers', 'keno', 'limbo', 'rain'].includes(name)) {
       const wait = checkCooldown(interaction.user.id, name);
       if (wait > 0) {
