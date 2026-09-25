@@ -22,7 +22,7 @@ import { handleTicTacToeInteraction, isTicTacToeRequest, startTicTacToe } from '
 import { containsDiscordInviteLink } from './link-filter.js';
 import { handleStocksChatInput, handleStocksInteraction, registerStockCommands } from './stocks.js';
 import { getEconomyCommands, handleEconomyChatInput, handleEconomyInteraction } from './economy.js';
-import { handleHelpChatInput, handleHelpInteraction } from './help.js';
+import { getHelpCommand, handleHelpChatInput, handleHelpInteraction } from './help.js';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences],
@@ -456,7 +456,7 @@ client.on('interactionCreate', async (interaction) => {
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
-    await registerStockCommands(client, config.guildId, getEconomyCommands());
+    await registerStockCommands(client, config.guildId, [getHelpCommand(), ...getEconomyCommands()]);
     console.log('Stock commands registered globally.');
   } catch (error) {
     console.error('Failed to register stock commands:', error);
