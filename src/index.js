@@ -5,6 +5,10 @@ import { getEconomyCommands, handleEconomyChatInput, handleEconomyInteraction } 
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error);
+});
+
 client.on('interactionCreate', async (interaction) => {
   try {
     if (await handleStocksChatInput(interaction)) return;
@@ -33,4 +37,6 @@ client.once('ready', async () => {
   }
 });
 
-client.login(config.token);
+client.login(config.token).catch((error) => {
+  console.error('Discord login failed:', error);
+});
