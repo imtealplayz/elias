@@ -1202,7 +1202,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
     .setTimestamp()
     .setFooter({ text: "🎰 Casino Bot" });
 
-  const resultEmbed = (val, didWin) => new EmbedBuilder()
+  const resultEmbed = async (val, didWin) => new EmbedBuilder()
     .setColor(didWin ? 0x2ECC71 : 0xE74C3C)
     .setTitle(didWin ? "🎰 Limbo — You Won! 🎉" : "🎰 Limbo — You Lost!")
     .setDescription(
@@ -1239,7 +1239,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
     spinIdx++;
     if (frameIdx >= frames.length) {
       clearInterval(interval);
-      await msg.edit({ embeds: [resultEmbed(finalResult, won)] }).catch(() => {});
+      await msg.edit({ embeds: [await resultEmbed(finalResult, won)] }).catch(() => {});
       endGame(guildId, userId);
       return;
     }
