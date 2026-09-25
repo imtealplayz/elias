@@ -2,7 +2,7 @@ import { config } from './config.js';
 
 const baseUrl = config.supabaseUrl.replace(/\/$/, '') + '/rest/v1';
 
-async function request(table, { method = 'GET', query = '', body, prefer } = {}) {
+export async function request(table, { method = 'GET', query = '', body, prefer } = {}) {
   const response = await fetch(baseUrl + '/' + table + query, {
     method,
     headers: {
