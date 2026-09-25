@@ -10,11 +10,13 @@ import {
   SlashCommandBuilder,
   TextDisplayBuilder
 } from 'discord.js';
+import { config } from './config.js';
+import { addBalance, formatTeal, getBalance, removeBalance, TEAL } from './teal.js';
 import { buyStock, getStocks, getUserPortfolio, resetStocks, sellStock } from './db.js';
 
 const STOCK_PASSWORD = 'zip123';
 const MAX_BUY_QUANTITY = 10;
-const STOCK_CURRENCY_LABEL = 'Robux';
+const STOCK_CURRENCY_LABEL = TEAL;
 const STOCK_OWNER_ID = '926063716057894953';
 
 function divider() {
@@ -225,30 +227,20 @@ export async function handleStocksChatInput(interaction) {
           return true;
         }
         await interaction.deferReply({ ephemeral: true });
-        try {
-          const result = await buyStock(interaction.user.id, symbol, quantity);
-          await interaction.editReply({ content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.' });
-        } catch (error) {
-          console.error('Stock purchase error:', error?.message || error);
-          let message = '❌ I could not complete that purchase. Try again.';
-          if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks` for the current symbols.';
-          if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left.';
-          await interaction.editReply({ content: message });
-        }
-        return true;
-      }
-      await interaction.deferReply({ ephemeral: true });
       try {
         const result = await sellStock(interaction.user.id, symbol, quantity);
-        await interaction.editReply({ content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.' });
+        const saleValue = Math.floor(Number(result.totalValue || 0));
+        const newBalance = await addBalance(config.guildId, interaction.user.id, saleValue);
+        await interaction.editReply({
+          content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** for **' + saleValue.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nNew balance: **' + formatTeal(newBalance) + '**.'
+        });
       } catch (error) {
         console.error('Stock sale error:', error?.message || error);
         let message = '❌ I could not complete that sale. Try again.';
-        if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks` for the current symbols.';
+        if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks view` for the current symbols.';
         if (error?.message === 'INSUFFICIENT_SHARES') message = '❌ You do not own enough of that stock to sell that amount.';
         await interaction.editReply({ content: message });
-      }
-      return true;
+      }      return true;
     }
     if (subcommand === 'view') {
       await interaction.deferReply();
@@ -279,10 +271,13 @@ export async function handleStocksChatInput(interaction) {
     const targetUser = interaction.options.getUser('user') || interaction.user;
     await interaction.deferReply();
     try {
-      const portfolio = await getUserPortfolio(targetUser.id);
+      const [portfolio, balance] = await Promise.all([
+        getUserPortfolio(targetUser.id),
+        getBalance(config.guildId, targetUser.id)
+      ]);
       await interaction.editReply({
         flags: MessageFlags.IsComponentsV2,
-        components: buildPortfolioComponents(targetUser, portfolio)
+        components: buildPortfolioComponents(targetUser, portfolio, balance)
       });
     } catch (error) {
       console.error('Portfolio load error:', error?.message || error);
