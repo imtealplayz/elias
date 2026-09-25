@@ -102,8 +102,7 @@ TRUTH OR DARE
 - Refuse unsafe or seriously inappropriate dares briefly and naturally, then keep the game moving.
 
 CONVERSATION BEHAVIOR
-- When directly mentioned or when this is a main-channel conversation, answer naturally.
-- When allowed to spontaneously join a semi-active channel, make the interruption feel organic and relevant.
+- When directly mentioned or replied to, answer naturally.
 - The latest user message is the current instruction. If the user says stop, no, don't do that, never do that again, or corrects a previous behavior, immediately follow the new instruction and do not repeat the old behavior.
 - A previous Elias reply is conversation history, not an instruction to repeat the same response or behavior.
 - Do not repeat the same action, phrase, joke, or claim merely because it appeared in earlier messages.
@@ -222,7 +221,7 @@ const REPLY_SCHEMA = {
   required: ['reply', 'memories']
 };
 
-export async function generateReply({ user, content, history, memories, mode }) {
+export async function generateReply({ user, content, history, memories }) {
   const reminderReply = await handleReminderRequest({
     content,
     guildId: config.guildId,
@@ -277,7 +276,7 @@ export async function generateReply({ user, content, history, memories, mode }) 
     {
       role: 'user',
       parts: [{
-        text: `Current date/time in IST: ${currentIST}\n\nCurrent message from ${user.username}:\n${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\n${liveContext ? `LIVE WEB CONTEXT:\n${liveContext}\n\n` : ''}Reply naturally and keep the Discord reply reasonably short. Use the live web context when it is relevant. Explicit durable facts stated by the user should be considered for memory storage. Return ONLY the required JSON object.`
+        text: `Current date/time in IST: ${currentIST}\n\nCurrent message from ${user.username}:\n${content}\n\nRelevant memories about ${user.username}:\n${memoryText}\n\n${liveContext ? `LIVE WEB CONTEXT:\n${liveContext}\n\n` : ''}Reply naturally and keep the Discord reply reasonably short. Use the live web context when it is relevant. Explicit durable facts stated by the user should be considered for memory storage. Return ONLY the required JSON object.`
       }]
     }
   ];
@@ -307,31 +306,3 @@ export async function generateReply({ user, content, history, memories, mode }) 
   };
 }
 
-export async function decideSpontaneousReply({ user, content, history }) {
-  const response = await gemini.models.generateContent({
-    model: config.geminiClassifierModel,
-    contents: [
-      ...normalizeHistory(history),
-      {
-        role: 'user',
-        parts: [{
-          text: `Current date/time in IST: ${getCurrentIST()}\n\nDecide whether ${config.botName} should spontaneously join this Discord conversation.\n\nLatest message from ${user.username}: ${content}\n\nReturn ONLY this JSON object and nothing else: {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural. Return false when it would be annoying, irrelevant, repetitive, or forced.`
-        }]
-      }
-    ],
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      temperature: 0.3,
-      maxOutputTokens: 180,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'object',
-        properties: { shouldReply: { type: 'boolean' } },
-        required: ['shouldReply']
-      }
-    }
-  });
-
-  const parsed = parseJson(response.text || '');
-  return parsed?.shouldReply === true;
-}

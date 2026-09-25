@@ -31,27 +31,6 @@ function normalizeMemory(value) {
   return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-export async function getChannelMode(guildId, channelId) {
-  const rows = await request('channels', { query: `?select=mode&guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}&limit=1` });
-  return rows?.[0]?.mode || null;
-}
-
-export async function listChannelModes(guildId) {
-  return request('channels', { query: `?select=channel_id,mode&guild_id=eq.${encode(guildId)}&order=mode.asc` });
-}
-
-export async function setChannelMode(guildId, channelId, mode) {
-  return request('channels', {
-    method: 'POST', query: '?on_conflict=channel_id',
-    body: [{ guild_id: guildId, channel_id: channelId, mode, updated_at: new Date().toISOString() }],
-    prefer: 'resolution=merge-duplicates,return=minimal'
-  });
-}
-
-export async function removeChannelMode(guildId, channelId) {
-  return request('channels', { method: 'DELETE', query: `?guild_id=eq.${encode(guildId)}&channel_id=eq.${encode(channelId)}` });
-}
-
 export async function upsertUser(user) {
   return request('users', {
     method: 'POST', query: '?on_conflict=discord_id',

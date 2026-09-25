@@ -5,11 +5,6 @@ A conversational Discord AI bot built with Node.js, discord.js, Gemini, Groq fal
 ## Features
 
 - Locked to one Discord server with `GUILD_ID`
-- `MAIN` channels: actively respond to normal user messages
-- `SEMI-ACTIVE` channels: respond to mentions/replies and occasionally join conversations
-- `BLOCKED` channels: never respond to normal messages
-- Multiple main/semi channels supported
-- Prefix commands for channel configuration
 - Persistent user memories in Supabase
 - `!memory` sends a user's stored memories by DM
 - `!forget` deletes a user's stored memories
@@ -18,7 +13,6 @@ A conversational Discord AI bot built with Node.js, discord.js, Gemini, Groq fal
 - Live currency conversion using the latest available exchange rate
 - Live crypto prices and crypto/fiat or crypto/crypto conversion
 - Natural-language reminders with persistent scheduling
-- Per-channel queueing and spontaneous-response cooldowns
 - No secrets committed to the repository
 
 ## Natural language features
@@ -55,18 +49,10 @@ Supabase is used only from the server-side bot. The secret key must never be exp
 
 ## Commands
 
-- `!main [#channel]`
-- `!unmain [#channel]`
-- `!semi [#channel]`
-- `!unsemi [#channel]`
-- `!block [#channel]`
-- `!unblock [#channel]`
-- `!channels`
 - `!memory`
 - `!forget`
 - `!help`
 
-Channel commands require **Manage Server** or **Administrator** permission.
 
 ## Railway variables
 
@@ -89,8 +75,6 @@ GEMINI_CLASSIFIER_MODEL=gemini-2.5-flash-lite
 GROQ_API_KEY=
 GROQ_MODEL=openai/gpt-oss-20b
 BOT_PREFIX=!
-SPONTANEOUS_CHANCE=0.04
-SEMI_COOLDOWN_SECONDS=300
 MAX_CONTEXT_MESSAGES=18
 MAX_MEMORIES_PER_USER=12
 BOT_NAME=Elias

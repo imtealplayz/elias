@@ -1,15 +1,6 @@
 -- Elias database schema
 -- Run this once in Supabase -> SQL Editor.
 
-create table if not exists public.channels (
-  channel_id text primary key,
-  guild_id text not null,
-  mode text not null check (mode in ('main', 'semi', 'blocked')),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists channels_guild_id_idx on public.channels(guild_id);
-
 create table if not exists public.users (
   discord_id text primary key,
   username text not null,

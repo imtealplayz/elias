@@ -1,17 +1,15 @@
-import { Client, GatewayIntentBits, Partials, PermissionFlagsBits } from 'discord.js';
+import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { config } from './config.js';
 import {
   deleteMemoryIds,
-  getChannelMode,
   getRecentMessages,
   getUserMemories,
   saveMemories,
   saveMessage,
   upsertUser
 } from './db.js';
-import { decideSpontaneousReply, generateReply, getGeminiRetryAfterMs, isGeminiRateLimitError } from './ai.js';
+import { generateReply, getGeminiRetryAfterMs, isGeminiRateLimitError } from './ai.js';
 import {
-  decideSpontaneousReplyFallback,
   generateReplyFallback,
   getGroqRetryAfterMs,
   isGroqRateLimitError
@@ -289,22 +287,7 @@ async function generateReplyWithFallback(payload) {
   }
 }
 
-async function decideSpontaneousReplyWithFallback(payload) {
-  try {
-    return await decideSpontaneousReply(payload);
-  } catch (primaryError) {
-    console.warn('Gemini classifier failed; trying Groq fallback:', primaryError?.message || primaryError);
-    try {
-      return await decideSpontaneousReplyFallback(payload);
-    } catch (fallbackError) {
-      if (isProviderRateLimitError(fallbackError)) throw fallbackError;
-      if (isProviderRateLimitError(primaryError)) throw primaryError;
-      throw fallbackError;
-    }
-  }
-}
-
-async function respondToMessage(message, mode) {
+async function respondToMessage(message) {
   const content = cleanContent(message);
   if (!content) return;
   if (isAiTemporarilyUnavailable()) {
@@ -353,7 +336,6 @@ async function respondToMessage(message, mode) {
     content,
     history,
     memories,
-    mode,
     creatorName: config.creatorName,
     botName: config.botName
   });
@@ -407,15 +389,12 @@ client.on('messageCreate', async (message) => {
     const handled = await handleCommand(message);
     if (handled) return;
 
-    const mode = await getChannelMode(config.guildId, message.channelId);
     const content = cleanContent(message);
     const addressed = containsNameMention(content) || await isReplyToElias(message);
 
-    if (mode === 'blocked') return;
-    if (mode === 'main') {
-      await queueForChannel(message.channelId, () => respondToMessage(message, mode));
-      return;
-    }
+    if (!addressed) return;
+    await queueForChannel(message.channelId, () => respondToMessage(message));
+
     if (mode === 'semi' && addressed) {
       await queueForChannel(message.channelId, () => respondToMessage(message, mode));
       return;

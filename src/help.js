@@ -40,13 +40,6 @@ function generalEmbed() {
     .setTitle('📖 Elias Help • General')
     .setDescription([
       `**${config.prefix}help** — Show the legacy text help`,
-      `**${config.prefix}main [#channel]** — Set a channel to MAIN`,
-      `**${config.prefix}unmain [#channel]** — Remove MAIN mode`,
-      `**${config.prefix}semi [#channel]** — Set a channel to SEMI-ACTIVE`,
-      `**${config.prefix}unsemi [#channel]** — Remove SEMI-ACTIVE mode`,
-      `**${config.prefix}block [#channel]** — Block Elias in a channel`,
-      `**${config.prefix}unblock [#channel]** — Remove BLOCKED mode`,
-      `**${config.prefix}channels** — View channel configuration`,
       '**.afk [reason]** — Set your AFK status',
       '**.crc** — Show what you are currently watching on Crunchyroll',
       `**${config.prefix}memory** — DM your stored memories`,

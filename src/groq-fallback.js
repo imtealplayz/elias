@@ -59,7 +59,7 @@ function parseJson(text) {
   }
 }
 
-export async function generateReplyFallback({ user, content, history, memories, mode, currentNamePreference = null }) {
+export async function generateReplyFallback({ user, content, history, memories, currentNamePreference = null }) {
   const client = requireClient();
   const memoryText = memories.length ? memories.map((m) => `- ${m.memory}`).join('\n') : '- No stored memories.';
   const currentName = currentNamePreference ? `\n\nAUTHORITATIVE CURRENT NAME PREFERENCE: User prefers to be called ${currentNamePreference}. Never use an older name preference.` : '';
@@ -71,7 +71,7 @@ export async function generateReplyFallback({ user, content, history, memories, 
       ...normalizeHistory(history),
       {
         role: 'user',
-        content: `Current date/time in IST: ${currentIST()}\n\nCurrent message from ${user.username}: ${content}\n\nChannel mode: ${mode}\n\nRelevant memories about ${user.username}:\n${memoryText}${currentName}\n\nReply naturally and keep it reasonably short. Return ONLY this JSON object: {"reply":"...","memories":[{"memory":"...","importance":0.5}]}`
+        content: `Current date/time in IST: ${currentIST()}\n\nCurrent message from ${user.username}: ${content}\n\nRelevant memories about ${user.username}:\n${memoryText}${currentName}\n\nReply naturally and keep it reasonably short. Return ONLY this JSON object: {"reply":"...","memories":[{"memory":"...","importance":0.5}]}`
       }
     ],
     temperature: 0.85,
@@ -88,30 +88,6 @@ export async function generateReplyFallback({ user, content, history, memories, 
     reply: parsed.reply.trim(),
     memories: Array.isArray(parsed.memories) ? parsed.memories : []
   };
-}
-
-export async function decideSpontaneousReplyFallback({ user, content, history }) {
-  const client = requireClient();
-
-  const completion = await client.chat.completions.create({
-    model: config.groqModel,
-    messages: [
-      { role: 'system', content: FALLBACK_SYSTEM_PROMPT },
-      ...normalizeHistory(history),
-      {
-        role: 'user',
-        content: `Current date/time in IST: ${currentIST()}\n\nDecide whether ${config.botName} should spontaneously join this Discord conversation. Latest message from ${user.username}: ${content}\n\nReturn ONLY {"shouldReply":true} or {"shouldReply":false}. Return true only when an interruption would feel relevant and natural.`
-      }
-    ],
-    temperature: 0.3,
-    max_completion_tokens: 120,
-    reasoning_effort: 'low',
-    include_reasoning: false,
-    response_format: { type: 'json_object' }
-  });
-
-  const parsed = parseJson(completion.choices?.[0]?.message?.content || '');
-  return parsed?.shouldReply === true;
 }
 
 export async function summarizeMessagesFallback(messages) {
