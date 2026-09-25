@@ -5,6 +5,7 @@ import {
   SlashCommandBuilder
 } from 'discord.js';
 import { config } from './config.js';
+import { getHelpCommand } from './help.js';
 import {
   COLORS,
   TEAL,
@@ -371,6 +372,7 @@ async function cmdResetBalance(interaction) {
 
 export function getEconomyCommands() {
   return [
+    getHelpCommand(),
     new SlashCommandBuilder()
       .setName('leaderboard')
       .setDescription('View the richest Teal users'),
