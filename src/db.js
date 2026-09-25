@@ -361,3 +361,5 @@ export async function sellStock(discordId, symbol, quantity) {
     totalValue: Number(quantity) * newPrice
   };
 }
+
+export { request };
