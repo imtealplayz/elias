@@ -570,7 +570,7 @@ export async function handleEconomyChatInput(interaction) {
 export async function handleEconomyInteraction(interaction) {
   if (interaction.isButton()) {
     if (interaction.customId.startsWith('bj:') || interaction.customId === 'bj_hit' || interaction.customId === 'bj_stand' || interaction.customId === 'bj_double') return handleBlackjack(interaction);
-    if (interaction.customId.startsWith('mines:') || interaction.customId === 'mines_cashout') return handleMines(interaction);
+    if (interaction.customId.startsWith('mines_') || interaction.customId.startsWith('mines:') || interaction.customId === 'mines_cashout') return handleMines(interaction);
     if (interaction.customId.startsWith('tower_pick_') || interaction.customId === 'tower_cashout') {
       return handleTowers(interaction);
     }
