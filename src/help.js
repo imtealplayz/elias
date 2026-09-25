@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  SlashCommandBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder
@@ -115,13 +116,7 @@ function adminEmbed() {
 }
 
 export function getHelpCommand() {
-  return {
-    data: null,
-    command: {
-      name: 'help',
-      description: 'View Elias commands by category'
-    }
-  };
+  return new SlashCommandBuilder().setName('help').setDescription('View Elias commands by category').toJSON();
 }
 
 export function buildHelpPayload(category = 'general') {
