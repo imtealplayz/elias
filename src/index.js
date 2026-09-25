@@ -13,6 +13,13 @@ client.on('interactionCreate', async (interaction) => {
     await handleEconomyInteraction(interaction);
   } catch (error) {
     console.error('Interaction handler error:', error);
+
+    if (interaction.isRepliable?.() && !interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: '❌ Something went wrong while processing that interaction.',
+        flags: 64
+      }).catch(() => {});
+    }
   }
 });
 
