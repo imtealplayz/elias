@@ -22,6 +22,7 @@ import { handleTicTacToeInteraction, isTicTacToeRequest, startTicTacToe } from '
 import { containsDiscordInviteLink } from './link-filter.js';
 import { handleStocksChatInput, handleStocksInteraction, registerStockCommands } from './stocks.js';
 import { getEconomyCommands, handleEconomyChatInput, handleEconomyInteraction } from './economy.js';
+import { handleHelpChatInput, handleHelpInteraction } from './help.js';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences],
@@ -436,10 +437,12 @@ client.on('messageCreate', async (message) => {
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    if (await handleHelpChatInput(interaction)) return;
     if (await handleStocksChatInput(interaction)) return;
     if (await handleEconomyChatInput(interaction)) return;
     if (await handleStocksInteraction(interaction)) return;
     if (await handleEconomyInteraction(interaction)) return;
+    if (await handleHelpInteraction(interaction)) return;
     if (isTicTacToeRequest(interaction)) {
       await startTicTacToe(interaction);
       return;
