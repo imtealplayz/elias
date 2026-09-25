@@ -508,20 +508,26 @@ export async function handleEconomyChatInput(interaction) {
     // Acknowledge before any Supabase work so Discord cannot time out.
     await interaction.deferReply();
 
-    // Existing command handlers use interaction.reply(). Route those replies
-    // to the already-acknowledged interaction without changing game logic.
-    const originalReply = interaction.reply.bind(interaction);
-    interaction.reply = async (options) => {
-      if (!interaction.deferred) return originalReply(options);
-      const payload = { ...options };
-      delete payload.ephemeral;
-      delete payload.flags;
-      return interaction.editReply(payload);
-    };
+    // Existing command handlers use interaction.reply(). Give them a local
+    // wrapper that edits the already-acknowledged interaction without mutating
+    // the discord.js Interaction instance itself.
+    const commandInteraction = new Proxy(interaction, {
+      get(target, property, receiver) {
+        if (property === 'reply') {
+          return async (options) => {
+            const payload = { ...options };
+            delete payload.ephemeral;
+            delete payload.flags;
+            return target.editReply(payload);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      }
+    });
     if (['slots', 'coinflip', 'roulette', 'blackjack', 'crash', 'mines', 'towers', 'keno', 'limbo', 'rain'].includes(name)) {
       const wait = checkCooldown(interaction.user.id, name);
       if (wait > 0) {
-        await interaction.reply({
+        await commandInteraction.reply({
           embeds: [baseEmbed('⏳ Slow Down', COLORS.red).setDescription(`Use **/${name}** again in **${wait}s**.`)],
           flags: MessageFlags.Ephemeral
         });
@@ -531,58 +537,58 @@ export async function handleEconomyChatInput(interaction) {
 
     switch (name) {
       case 'balance':
-        await cmdBalance(interaction);
+        await cmdBalance(commandInteraction);
         return true;
       case 'leaderboard':
-        await cmdLeaderboard(interaction);
+        await cmdLeaderboard(commandInteraction);
         return true;
       case 'profile':
-        await cmdProfile(interaction);
+        await cmdProfile(commandInteraction);
         return true;
       case 'tip':
-        await cmdTip(interaction);
+        await cmdTip(commandInteraction);
         return true;
       case 'rain':
-        await cmdRain(interaction);
+        await cmdRain(commandInteraction);
         return true;
       case 'give':
-        await cmdGive(interaction);
+        await cmdGive(commandInteraction);
         return true;
       case 'take':
-        await cmdTake(interaction);
+        await cmdTake(commandInteraction);
         return true;
       case 'resetbalance':
-        await cmdResetBalance(interaction);
+        await cmdResetBalance(commandInteraction);
         return true;
       case 'unfreeze':
-        await cmdUnfreeze(interaction, interaction.user.id, interaction.guildId);
+        await cmdUnfreeze(commandInteraction, interaction.user.id, interaction.guildId);
         return true;
       case 'slots':
-        await cmdSlots(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'));
+        await cmdSlots(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'));
         return true;
       case 'coinflip':
-        await cmdCoinflip(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('choice'));
+        await cmdCoinflip(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('choice'));
         return true;
       case 'roulette':
-        await cmdRoulette(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('type'));
+        await cmdRoulette(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('type'));
         return true;
       case 'blackjack':
-        await cmdBlackjack(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'));
+        await cmdBlackjack(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'));
         return true;
       case 'crash':
-        await cmdCrash(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'));
+        await cmdCrash(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'));
         return true;
       case 'mines':
-        await cmdMines(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getInteger('mines'));
+        await cmdMines(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getInteger('mines'));
         return true;
       case 'towers':
-        await cmdTowers(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('difficulty') || 'easy');
+        await cmdTowers(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('difficulty') || 'easy');
         return true;
       case 'keno':
-        await cmdKeno(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('picks'));
+        await cmdKeno(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getString('picks'));
         return true;
       case 'limbo':
-        await cmdLimbo(interaction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getNumber('target'));
+        await cmdLimbo(commandInteraction, interaction.user.id, interaction.guildId, interaction.options.getInteger('bet'), interaction.options.getNumber('target'));
         return true;
       default:
         return false;
