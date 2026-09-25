@@ -156,11 +156,7 @@ export async function registerStockCommands(client, legacyGuildId, additionalCom
   // instead of relying on per-command create/edit calls.
   const managedCommands = [...additionalCommands, ...commands];
   const managedNames = new Set(managedCommands.map((command) => command.name));
-  const existingGlobal = await client.application.commands.fetch();
-  const untouchedGlobal = [...existingGlobal.values()]
-    .filter((command) => !managedNames.has(command.name))
-    .map((command) => command.toJSON());
-  const globalCommands = await client.application.commands.set([...untouchedGlobal, ...managedCommands]);
+  const globalCommands = await client.application.commands.set(managedCommands);
 
   // Remove only the old guild-local stock commands so there is one global
   // command instead of duplicate guild + global versions. All other Elias
@@ -170,13 +166,7 @@ export async function registerStockCommands(client, legacyGuildId, additionalCom
 
   for (const guild of client.guilds.cache.values()) {
     try {
-      const guildCommands = await guild.commands.fetch();
-
-      for (const command of guildCommands.values()) {
-        if (managedNames.has(command.name)) {
-          await command.delete();
-        }
-      }
+      await guild.commands.set([]);
 
       guildsCleaned++;
     } catch (error) {
