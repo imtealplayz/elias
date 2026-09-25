@@ -112,7 +112,7 @@ async function validateBet(interaction, guildId, userId, bet) {
     await interaction.reply({ embeds: [baseEmbed("❌ Invalid Bet", COLORS.red).setDescription(`Minimum bet is **1 ${R}**.\n\nExample: \`$slots 5\``)], flags: MessageFlags.Ephemeral });
     return false;
   }
-  const bal = getBalance(guildId, userId);
+  const bal = await getBalance(guildId, userId);
   if (bal < bet) {
     await interaction.reply({ embeds: [baseEmbed("❌ Insufficient Funds", COLORS.red).setDescription(`You need **${bet.toLocaleString()} ${R}** but only have **${bal.toLocaleString()} ${R}**.`)], flags: MessageFlags.Ephemeral });
     return false;
@@ -143,7 +143,7 @@ async function cmdSlots(interaction, userId, guildId, bet) {
   bet = parseInt(bet);
   if (!await validateBet(interaction, guildId, userId, bet)) return;
   startGame(guildId, userId, "Slots");
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   const reels = [spinSlot(), spinSlot(), spinSlot()];
   const display = reels.map(r => r.emoji).join("  ");
@@ -156,7 +156,7 @@ async function cmdSlots(interaction, userId, guildId, bet) {
     winnings = adjustedPayout;
     resultText = `🎉 **JACKPOT!** All three match! ×${reels[0].mult}${bonusMsg}`;
     winDisplay = feeDisplay(gross, net) + (adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : "");
-    addBalance(guildId, userId, winnings);
+    await addBalance(guildId, userId, winnings);
   } else if (reels[0].emoji === reels[1].emoji || reels[1].emoji === reels[2].emoji || reels[0].emoji === reels[2].emoji) {
     const gross = Math.floor(bet * 1.5);
     const net   = applyFee(gross);
@@ -164,22 +164,22 @@ async function cmdSlots(interaction, userId, guildId, bet) {
     winnings = adjustedPayout;
     resultText = `✨ **Two of a kind!** ×1.5${bonusMsg}`;
     winDisplay = feeDisplay(gross, net) + (adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : "");
-    addBalance(guildId, userId, winnings);
+    await addBalance(guildId, userId, winnings);
   } else {
     const { cashback, bonusMsg } = applyActiveBonusOnLoss(guildId, userId, bet);
     resultText = `😔 **No match.** Better luck next time!${bonusMsg}`;
   }
 
   const profit = winnings > 0 ? winnings - bet : -bet;
-  const rr = recordGame(guildId, userId, "slots", bet, profit);
-  await await checkWagerRole();
+  const rr = await recordGame(guildId, userId, "slots", bet, profit);
+  await checkWagerRole();
 
   const embed = baseEmbed("🎰 Slot Machine", winnings > 0 ? COLORS.green : COLORS.red)
     .setDescription(`┌─────────────────┐\n│  ${display}  │\n└─────────────────┘\n\n${resultText}`)
     .addFields(
       { name: "Bet",    value: `${bet.toLocaleString()} ${R}`,                                                          inline: true },
       { name: winnings > 0 ? "Won" : "Lost", value: winnings > 0 ? `+${winDisplay}` : `-${bet.toLocaleString()} ${R}`, inline: true },
-      { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`,                                 inline: true }
+      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`,                                 inline: true }
     );
 
   await interaction.reply({ embeds: [embed] });
@@ -225,7 +225,7 @@ async function cmdCoinflip(interaction, userId, guildId, bet, choice) {
       return btn.editReply({ embeds: [cancelEmbed], components: [] });
     }
 
-    removeBalance(guildId, userId, bet);
+    await removeBalance(guildId, userId, bet);
     const spinFrames = ["🪙", "🌀", "🪙", "🌀", "🪙", "🌀"];
     const spinEmbed = (frame) => baseEmbed("🪙 Coinflip", 0xF4C542)
       .setDescription(`${frame} **Flipping...**\n\nYour pick: **${choiceFmt}**`)
@@ -245,8 +245,8 @@ async function cmdCoinflip(interaction, userId, guildId, bet, choice) {
           ? applyActiveBonusToWin(guildId, userId, cfNet)
           : { adjustedPayout: 0, bonusMsg: "" };
         const { cashback, bonusMsg: lossMsg } = !won ? applyActiveBonusOnLoss(guildId, userId, bet) : { cashback: 0, bonusMsg: "" };
-        if (won) addBalance(guildId, userId, cfPayout);
-        const rr = recordGame(guildId, userId, "coinflip", bet, won ? cfPayout - bet : -bet);
+        if (won) await addBalance(guildId, userId, cfPayout);
+        const rr = await recordGame(guildId, userId, "coinflip", bet, won ? cfPayout - bet : -bet);
         await checkWagerRole(btn, guildId, userId, rr);
         const resultFmt = result === "heads" ? "🟡 Heads" : "⚪ Tails";
         const winStr = won
@@ -257,7 +257,7 @@ async function cmdCoinflip(interaction, userId, guildId, bet, choice) {
           .addFields(
             { name: "Your Pick", value: choiceFmt, inline: true },
             { name: won ? "Won" : "Lost", value: winStr, inline: true },
-            { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+            { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
           );
         await btn.editReply({ embeds: [embed], components: [] }).catch(() => {});
         endGame(guildId, userId);
@@ -317,7 +317,7 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
       return btn.editReply({ embeds: [baseEmbed("🎡 Roulette Cancelled", COLORS.red).setDescription("Bet cancelled.")], components: [] });
     }
 
-    removeBalance(guildId, userId, bet);
+    await removeBalance(guildId, userId, bet);
 
     const wheelFrames = ["🔴⚫🟢🔴⚫", "⚫🟢🔴⚫🔴", "🟢🔴⚫🔴⚫", "🔴⚫🔴🟢⚫", "⚫🔴⚫⚫🟢"];
     const spinEmbed = (frame) => baseEmbed("🎡 Roulette", 0xF4C542)
@@ -351,8 +351,8 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
           ? applyActiveBonusToWin(guildId, userId, winnings)
           : { adjustedPayout: 0, bonusMsg: "" };
         const { cashback, bonusMsg: lossMsg } = !won ? applyActiveBonusOnLoss(guildId, userId, bet) : { cashback: 0, bonusMsg: "" };
-        if (won) addBalance(guildId, userId, rlPayout);
-        const rr = recordGame(guildId, userId, "roulette", bet, won ? rlPayout - bet : -bet);
+        if (won) await addBalance(guildId, userId, rlPayout);
+        const rr = await recordGame(guildId, userId, "roulette", bet, won ? rlPayout - bet : -bet);
         await checkWagerRole(btn, guildId, userId, rr);
 
         const colorEmoji = { red: "🔴", black: "⚫", green: "🟢" };
@@ -364,7 +364,7 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
           .addFields(
             { name: "Your Bet", value: `\`${betType}\``, inline: true },
             { name: won ? "Won" : "Lost", value: winStr, inline: true },
-            { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+            { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
           );
 
         await btn.editReply({ embeds: [embed], components: [] }).catch(() => {});
@@ -411,7 +411,7 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
   bet = parseInt(bet);
   if (!await validateBet(interaction, guildId, userId, bet)) return;
   startGame(guildId, userId, "Blackjack");
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   const deck = newDeck();
   const playerHand = [deck.pop(), deck.pop()];
@@ -422,15 +422,15 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
     const gross = Math.floor(bet * 2.5);
     const win   = applyFee(gross);
     const { adjustedPayout: bjPayout, bonusMsg } = applyActiveBonusToWin(guildId, userId, win);
-    addBalance(guildId, userId, bjPayout);
-    const rr = recordGame(guildId, userId, "blackjack", bet, bjPayout - bet);
-    await await checkWagerRole();
+    await addBalance(guildId, userId, bjPayout);
+    const rr = await recordGame(guildId, userId, "blackjack", bet, bjPayout - bet);
+    await checkWagerRole();
     endGame(guildId, userId);
     const embed = baseEmbed("🃏 Blackjack — Blackjack!", COLORS.gold)
       .setDescription(`**Your Hand:** ${showHand(playerHand)} = **21**\n**Dealer:** ${showHand([dealerHand[0]])} + 🂠\n\n🎉 **BLACKJACK! ×2.5!**${bonusMsg}`)
       .addFields(
         { name: "Won",     value: `+${feeDisplay(gross, win)}${bjPayout !== win ? ` → **${bjPayout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.reply({ embeds: [embed] });
   }
@@ -447,7 +447,7 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
     .setDescription(`**Your Hand:** ${showHand(playerHand)} = **${pVal}**\n**Dealer:** ${showHand([dealerHand[0]])} + 🂠\n\nWhat will you do?`)
     .addFields(
       { name: "Bet",     value: `${bet.toLocaleString()} ${R}`,                         inline: true },
-      { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
     );
 
   await interaction.reply({ embeds: [embed], components: [row] });
@@ -467,8 +467,8 @@ async function handleBlackjack(interaction) {
 
   if (customId === "bj_hit" || customId === "bj_double") {
     if (customId === "bj_double") {
-      if (getBalance(guildId, user.id) < bet) return interaction.followUp({ content: "Not enough coins to double down!", flags: MessageFlags.Ephemeral });
-      removeBalance(guildId, user.id, bet);
+      if (await getBalance(guildId, user.id) < bet) return interaction.followUp({ content: "Not enough coins to double down!", flags: MessageFlags.Ephemeral });
+      await removeBalance(guildId, user.id, bet);
       bet *= 2;
       game.bet = bet;
     }
@@ -478,13 +478,13 @@ async function handleBlackjack(interaction) {
 
     if (pVal > 21) {
       bjGames.delete(key);
-      recordGame(guildId, user.id, "blackjack", bet, -bet);
+      await recordGame(guildId, user.id, "blackjack", bet, -bet);
       endGame(guildId, user.id);
       const embed = baseEmbed("🃏 Blackjack — Bust!", COLORS.red)
         .setDescription(`**Your Hand:** ${showHand(playerHand)} = **${pVal}** 💥 BUST!`)
         .addFields(
           { name: "Lost",    value: `-${bet.toLocaleString()} ${R}`, inline: true },
-          { name: "Balance", value: `${getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+          { name: "Balance", value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
         );
       return interaction.editReply({ embeds: [embed], components: [] });
     }
@@ -525,12 +525,12 @@ async function resolveBlackjack(interaction, game) {
     winnings = adjustedPayout; bonusMsg = bm; color = COLORS.green;
     result = "🎉 **You Win!**";
     winFieldVal = `+${feeDisplay(gross, net)}${adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : ""}`;
-    addBalance(guildId, userId, winnings);
+    await addBalance(guildId, userId, winnings);
   } else if (pVal === dVal) {
     winnings = bet; color = COLORS.blue; // tie — no fee
     result = "🤝 **Push! Tie.**";
     winFieldVal = `±0 ${R}`;
-    addBalance(guildId, userId, winnings);
+    await addBalance(guildId, userId, winnings);
   } else {
     color = COLORS.red;
     result = "😔 **Dealer Wins.**";
@@ -540,8 +540,8 @@ async function resolveBlackjack(interaction, game) {
   }
 
   const profit = winnings > bet ? winnings - bet : winnings === bet ? 0 : -bet;
-  const rr = recordGame(guildId, userId, "blackjack", bet, profit);
-  await await checkWagerRole();
+  const rr = await recordGame(guildId, userId, "blackjack", bet, profit);
+  await checkWagerRole();
   endGame(guildId, userId);
 
   const embed = baseEmbed("🃏 Blackjack — Result", color)
@@ -549,7 +549,7 @@ async function resolveBlackjack(interaction, game) {
     .addFields(
       { name: "Bet",     value: `${bet.toLocaleString()} ${R}`, inline: true },
       { name: "Result",  value: winFieldVal,                    inline: true },
-      { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
     );
 
   await interaction.editReply({ embeds: [embed], components: [] });
@@ -564,7 +564,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
   bet = parseInt(bet);
   if (!await validateBet(interaction, guildId, userId, bet)) return;
   startGame(guildId, userId, "Crash");
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   // Casino-grade crash distribution (8% house edge):
   // Formula: crashPoint = 0.92 / rand, but heavily weighted toward low values
@@ -593,13 +593,13 @@ async function cmdCrash(interaction, userId, guildId, bet) {
   // Instant crash — show result immediately without animation
   if (crashPoint <= 1.00) {
     crashGames.delete(`${guildId}-${userId}`);
-    recordGame(guildId, userId, "crash", bet, -bet);
+    await recordGame(guildId, userId, "crash", bet, -bet);
     endGame(guildId, userId);
     const instantEmbed = baseEmbed("📈 Crash — 💥 INSTANT CRASH!", COLORS.red)
       .setDescription(`The game crashed at **1.00×** before it even started! 💀`)
       .addFields(
         { name: "Lost",    value: `-${bet.toLocaleString()} ${R}`, inline: true },
-        { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.reply({ embeds: [instantEmbed] });
   }
@@ -630,14 +630,14 @@ async function cmdCrash(interaction, userId, guildId, bet) {
     if (current >= crashPoint) {
       clearInterval(interval);
       crashGames.delete(`${guildId}-${userId}`);
-      recordGame(guildId, userId, "crash", bet, -bet);
+      await recordGame(guildId, userId, "crash", bet, -bet);
       const { bonusMsg: lossMsg } = applyActiveBonusOnLoss(guildId, userId, bet);
       endGame(guildId, userId);
       const embed = baseEmbed("📈 Crash — 💥 CRASHED!", COLORS.red)
         .setDescription(`Crashed at **${crashPoint}×**! You lost your bet.${lossMsg}`)
         .addFields(
           { name: "Lost",    value: `-${bet.toLocaleString()} ${R}`, inline: true },
-          { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+          { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
         );
       return msg.edit({ embeds: [embed], components: [] }).catch(() => {});
     }
@@ -666,8 +666,8 @@ async function cmdCrash(interaction, userId, guildId, bet) {
     const gross  = Math.floor(bet * current);
     const net    = applyFee(gross);
     const { adjustedPayout: payout, bonusMsg } = applyActiveBonusToWin(guildId, userId, net);
-    addBalance(guildId, userId, payout);
-    const rr = recordGame(guildId, userId, "crash", bet, payout - bet);
+    await addBalance(guildId, userId, payout);
+    const rr = await recordGame(guildId, userId, "crash", bet, payout - bet);
     await checkWagerRole(btn, guildId, userId, rr);
     endGame(guildId, userId);
 
@@ -675,7 +675,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
       .setDescription(`You cashed out at **${current}×**!${bonusMsg}`)
       .addFields(
         { name: "Won",     value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
       );
     await msg.edit({ embeds: [embed], components: [] }).catch(() => {});
     collector.stop();
@@ -696,7 +696,7 @@ async function cmdMines(interaction, userId, guildId, bet, mineCount) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Mines", COLORS.red).setDescription(`Choose between **1 and 20** mines.`)], flags: MessageFlags.Ephemeral });
   }
   startGame(guildId, userId, "Mines");
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   const mines = new Set();
   while (mines.size < mineCount) mines.add(randInt(0, MINES_TOTAL - 1));
@@ -794,8 +794,8 @@ async function endMinesGame(interaction, game, hitMine, clearedBoard) {
     : { adjustedPayout: 0, bonusMsg: "" };
   const { bonusMsg: lossMsg } = hitMine ? applyActiveBonusOnLoss(game.guildId, game.userId, game.bet) : { bonusMsg: "" };
 
-  if (payout > 0) addBalance(game.guildId, game.userId, payout);
-  const rr = recordGame(game.guildId, game.userId, "mines", game.bet, payout > 0 ? payout - game.bet : -game.bet);
+  if (payout > 0) await addBalance(game.guildId, game.userId, payout);
+  const rr = await recordGame(game.guildId, game.userId, "mines", game.bet, payout > 0 ? payout - game.bet : -game.bet);
   await checkWagerRole(interaction, game.guildId, game.userId, rr);
   endGame(game.guildId, game.userId);
 
@@ -814,7 +814,7 @@ async function endMinesGame(interaction, game, hitMine, clearedBoard) {
   const resultEmbed = baseEmbed(title, color).setDescription(desc).addFields(
     { name: "Multiplier", value: `\`${mult}×\``,                                              inline: true },
     { name: hitMine ? "Lost" : "Won", value: winStr,                                           inline: true },
-    { name: "Balance",    value: `${getBalance(game.guildId, game.userId).toLocaleString()} ${R}`, inline: true }
+    { name: "Balance",    value: `${await getBalance(game.guildId, game.userId).toLocaleString()} ${R}`, inline: true }
   );
 
   const revealedRows = buildMinesRows(game, true);
@@ -914,7 +914,7 @@ async function cmdTowers(interaction, userId, guildId, bet, difficulty) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Difficulty", COLORS.red).setDescription("Choose: `easy` `medium` or `hard`")], flags: MessageFlags.Ephemeral });
   }
   startGame(guildId, userId, "Towers");
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   const cfg = TOWER_DIFFICULTIES[diff];
   const bombsPerFloor = [];
@@ -993,8 +993,8 @@ async function handleTowers(interaction) {
     const gross  = Math.floor(game.bet * mult);
     const net    = applyFee(gross);
     const { adjustedPayout: payout, bonusMsg } = applyActiveBonusToWin(guildId, user.id, net);
-    addBalance(guildId, user.id, payout);
-    const rr = recordGame(guildId, user.id, "towers", game.bet, payout - game.bet);
+    await addBalance(guildId, user.id, payout);
+    const rr = await recordGame(guildId, user.id, "towers", game.bet, payout - game.bet);
     await checkWagerRole(interaction, guildId, user.id, rr);
     endGame(guildId, user.id);
     const cfg = TOWER_DIFFICULTIES[game.difficulty];
@@ -1003,7 +1003,7 @@ async function handleTowers(interaction) {
       .addFields(
         { name: "Multiplier", value: `\`${mult}×\``, inline: true },
         { name: "Won",        value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance",    value: `${getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance",    value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
   }
@@ -1015,7 +1015,7 @@ async function handleTowers(interaction) {
 
   if (bombs.includes(col)) {
     towerGames.delete(key);
-    const rr2 = recordGame(guildId, user.id, "towers", game.bet, -game.bet);
+    const rr2 = await recordGame(guildId, user.id, "towers", game.bet, -game.bet);
     await checkWagerRole(interaction, guildId, user.id, rr2);
     endGame(guildId, user.id);
     const { bonusMsg: lossMsg } = applyActiveBonusOnLoss(guildId, user.id, game.bet);
@@ -1024,7 +1024,7 @@ async function handleTowers(interaction) {
       .addFields(
         { name: "Floors Climbed", value: `\`${floor}\``,                                          inline: true },
         { name: "Lost",           value: `-${game.bet.toLocaleString()} ${R}`,                    inline: true },
-        { name: "Balance",        value: `${getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance",        value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
   }
@@ -1037,8 +1037,8 @@ async function handleTowers(interaction) {
     const gross  = Math.floor(game.bet * mult);
     const net    = applyFee(gross);
     const { adjustedPayout: payout, bonusMsg } = applyActiveBonusToWin(guildId, user.id, net);
-    addBalance(guildId, user.id, payout);
-    const rr3 = recordGame(guildId, user.id, "towers", game.bet, payout - game.bet);
+    await addBalance(guildId, user.id, payout);
+    const rr3 = await recordGame(guildId, user.id, "towers", game.bet, payout - game.bet);
     await checkWagerRole(interaction, guildId, user.id, rr3);
     endGame(guildId, user.id);
     const embed = baseEmbed("🗼 Towers — TOP REACHED! 🏆", COLORS.gold)
@@ -1046,7 +1046,7 @@ async function handleTowers(interaction) {
       .addFields(
         { name: "Multiplier", value: `\`${mult}×\``, inline: true },
         { name: "Won",        value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
-        { name: "Balance",    value: `${getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
+        { name: "Balance",    value: `${await getBalance(guildId, user.id).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
   }
@@ -1084,7 +1084,7 @@ async function cmdKeno(interaction, userId, guildId, bet, picks) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Picks", COLORS.red).setDescription("Pick between **2 and 10** unique numbers between 1–80.")], flags: MessageFlags.Ephemeral });
   }
 
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   // Draw 15 numbers from 1–80
   const drawn = new Set();
@@ -1099,9 +1099,9 @@ async function cmdKeno(interaction, userId, guildId, bet, picks) {
     ? applyActiveBonusToWin(guildId, userId, net)
     : { adjustedPayout: 0, bonusMsg: "" };
   const { bonusMsg: lossMsg } = net === 0 ? applyActiveBonusOnLoss(guildId, userId, bet) : { bonusMsg: "" };
-  if (payout > 0) addBalance(guildId, userId, payout);
-  const rr = recordGame(guildId, userId, "keno", bet, payout > 0 ? payout - bet : -bet);
-  await await checkWagerRole();
+  if (payout > 0) await addBalance(guildId, userId, payout);
+  const rr = await recordGame(guildId, userId, "keno", bet, payout > 0 ? payout - bet : -bet);
+  await checkWagerRole();
 
   const drawnArr = [...drawn].sort((a, b) => a - b);
   const drawnDisplay = drawnArr.map(n => chosen.includes(n) ? `**${n}**` : `${n}`).join(", ");
@@ -1125,7 +1125,7 @@ async function cmdKeno(interaction, userId, guildId, bet, picks) {
           ? `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`,
         inline: true },
-      { name: "Balance",      value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true },
+      { name: "Balance",      value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true },
       { name: `Payouts (${chosen.length} picks)`, value: `\`${payoutPreview}\``, inline: false }
     );
 
@@ -1155,7 +1155,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
     return interaction.reply({ embeds: [baseEmbed("❌ Invalid Target", COLORS.red).setDescription("Target multiplier must be between **1.01× and 100×**.")], flags: MessageFlags.Ephemeral });
   }
   startGame(guildId, userId, "Limbo");
-  removeBalance(guildId, userId, bet);
+  await removeBalance(guildId, userId, bet);
 
   const result = generateLimboResult();
   const finalResult = parseFloat(result.toFixed(2));
@@ -1166,9 +1166,9 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
     ? applyActiveBonusToWin(guildId, userId, net)
     : { adjustedPayout: 0, bonusMsg: "" };
   const { bonusMsg: lossMsg } = !won ? applyActiveBonusOnLoss(guildId, userId, bet) : { bonusMsg: "" };
-  if (payout > 0) addBalance(guildId, userId, payout);
-  const rr = recordGame(guildId, userId, "limbo", bet, won ? payout - bet : -bet);
-  await await checkWagerRole();
+  if (payout > 0) await addBalance(guildId, userId, payout);
+  const rr = await recordGame(guildId, userId, "limbo", bet, won ? payout - bet : -bet);
+  await checkWagerRole();
 
   // Build animation frames:
   // - If lost: animate up to finalResult (never reaches target), red at end
@@ -1218,7 +1218,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
           ? `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`,
         inline: true },
-      { name: "Balance", value: `${getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
+      { name: "Balance", value: `${await getBalance(guildId, userId).toLocaleString()} ${R}`, inline: true }
     )
     .setTimestamp()
     .setFooter({ text: "🎰 Casino Bot" });
