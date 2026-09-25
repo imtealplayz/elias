@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { config } from './config.js';
 import { handleStocksChatInput, handleStocksInteraction, registerStockCommands } from './stocks.js';
 import { getEconomyCommands, handleEconomyChatInput, handleEconomyInteraction } from './economy.js';
@@ -29,6 +29,15 @@ client.on('interactionCreate', async (interaction) => {
 
 client.once('ready', async () => {
   console.log('Logged in as ' + client.user.tag);
+
+  client.user.setPresence({
+    status: 'dnd',
+    activities: [{
+      name: `serving ${client.guilds.cache.size} servers`,
+      type: ActivityType.Watching
+    }]
+  });
+
   try {
     await registerStockCommands(client, config.guildId, getEconomyCommands());
     console.log('Stock and Teal economy commands registered globally.');
