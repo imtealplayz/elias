@@ -189,7 +189,13 @@ async function cmdTip(interaction) {
   }
 
   await removeBalance(interaction.guildId, interaction.user.id, amount);
-  const newBalance = await addBalance(interaction.guildId, target.id, amount);
+  let newBalance;
+  try {
+    newBalance = await addBalance(interaction.guildId, target.id, amount);
+  } catch (error) {
+    await addBalance(interaction.guildId, interaction.user.id, amount).catch(() => {});
+    throw error;
+  }
 
   await interaction.reply({
     embeds: [
