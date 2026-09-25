@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { config } from './config.js';
 import { handleStocksChatInput, handleStocksInteraction, registerStockCommands } from './stocks.js';
 import { getEconomyCommands, handleEconomyChatInput, handleEconomyInteraction } from './economy.js';
@@ -32,7 +32,11 @@ client.once('ready', async () => {
 
   client.user.setPresence({
     status: 'dnd',
-    activities: []
+    activities: [{
+      name: 'Custom Status',
+      type: ActivityType.Custom,
+      state: `serving ${client.guilds.cache.size} servers`
+    }]
   });
 
   try {
