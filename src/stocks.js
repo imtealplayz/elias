@@ -11,7 +11,7 @@ import {
   TextDisplayBuilder
 } from 'discord.js';
 import { config } from './config.js';
-import { addBalance, formatTeal, getBalance, removeBalance, TEAL } from './teal.js';
+import { addBalance, formatTokens, getBalance, removeBalance, TEAL } from './teal.js';
 import { buyStock, getStocks, getUserPortfolio, resetStocks, sellStock } from './db.js';
 
 const STOCK_PASSWORD = 'zip123';
@@ -198,7 +198,7 @@ export async function handleStocksChatInput(interaction) {
       try {
         await resetStocks();
         await interaction.editReply({
-          content: '✅ Stock market reset. All stock prices are back to **75.00 Teal**, supply is restored to **150 shares each**, and all portfolios have been cleared.'
+          content: '✅ Stock market reset. All stock prices are back to **75.00 Tokens**, supply is restored to **150 shares each**, and all portfolios have been cleared.'
         });
       } catch (error) {
         console.error('Stock reset error:', error?.message || error);
@@ -229,7 +229,7 @@ export async function handleStocksChatInput(interaction) {
           const balance = await getBalance(config.guildId, interaction.user.id);
           if (balance < cost) {
             await interaction.editReply({
-              content: '❌ You need **' + cost.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**, but only have **' + formatTeal(balance) + '**.'
+              content: '❌ You need **' + cost.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**, but only have **' + formatTokens(balance) + '**.'
             });
             return true;
           }
@@ -240,15 +240,15 @@ export async function handleStocksChatInput(interaction) {
 
           const result = await buyStock(interaction.user.id, symbol, quantity);
           await interaction.editReply({
-            content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** for **' + charged.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nRemaining balance: **' + formatTeal(await getBalance(config.guildId, interaction.user.id)) + '**.'
+            content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** for **' + charged.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nRemaining balance: **' + formatTokens(await getBalance(config.guildId, interaction.user.id)) + '**.'
           });
         } catch (error) {
           console.error('Stock purchase error:', error?.message || error);
           if (charged > 0) await addBalance(config.guildId, interaction.user.id, charged).catch(() => {});
-          let message = '❌ I could not complete that purchase. Your Teal was refunded.';
-          if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Your Teal was not charged.';
-          if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left. Your Teal was refunded.';
-          if (error?.message === 'INSUFFICIENT_FUNDS') message = '❌ You do not have enough Teal for that purchase.';
+          let message = '❌ I could not complete that purchase. Your Tokens was refunded.';
+          if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Your Tokens was not charged.';
+          if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left. Your Tokens was refunded.';
+          if (error?.message === 'INSUFFICIENT_FUNDS') message = '❌ You do not have enough Tokens for that purchase.';
           await interaction.editReply({ content: message });
         }
         return true;
@@ -260,7 +260,7 @@ export async function handleStocksChatInput(interaction) {
         const saleValue = Math.floor(Number(result.totalValue || 0));
         const newBalance = await addBalance(config.guildId, interaction.user.id, saleValue);
         await interaction.editReply({
-          content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** for **' + saleValue.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nNew balance: **' + formatTeal(newBalance) + '**.'
+          content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** for **' + saleValue.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nNew balance: **' + formatTokens(newBalance) + '**.'
         });
       } catch (error) {
         console.error('Stock sale error:', error?.message || error);
