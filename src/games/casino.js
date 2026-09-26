@@ -78,18 +78,12 @@ async function cmdUnfreeze(interaction, userId, guildId) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-
-// Apply 10% house fee on payouts >= 20. Returns the net payout after fee.
-function applyFee(payout) {
-  if (payout < 20) return payout;
-  return Math.floor(payout * 0.90); // keep 90%, house takes 10%
-}
-
-// Returns a string showing gross, fee, and net: "180 R (200 R − 20 R fee)"
-function feeDisplay(gross, net) {
-  if (gross === net || gross < 20) return `${net.toLocaleString()} ${R}`;
-  const fee = gross - net;
-  return `${net.toLocaleString()} ${R} *(${gross.toLocaleString()} − ${fee.toLocaleString()} fee)*`;
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
 }
 
 // Promotions, deposit bonuses, cashback and wager-role rewards are intentionally
@@ -151,19 +145,19 @@ async function cmdSlots(interaction, userId, guildId, bet) {
 
   if (reels[0].emoji === reels[1].emoji && reels[1].emoji === reels[2].emoji) {
     const gross = Math.floor(bet * reels[0].mult);
-    const net   = applyFee(gross);
+    const net   = gross;
     const { adjustedPayout, bonusMsg } = applyActiveBonusToWin(guildId, userId, net);
     winnings = adjustedPayout;
     resultText = `🎉 **JACKPOT!** All three match! ×${reels[0].mult}${bonusMsg}`;
-    winDisplay = feeDisplay(gross, net) + (adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : "");
+    winDisplay = net.toLocaleString() + " " + R + (adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : "");
     await addBalance(guildId, userId, winnings);
   } else if (reels[0].emoji === reels[1].emoji || reels[1].emoji === reels[2].emoji || reels[0].emoji === reels[2].emoji) {
     const gross = Math.floor(bet * 1.5);
-    const net   = applyFee(gross);
+    const net   = gross;
     const { adjustedPayout, bonusMsg } = applyActiveBonusToWin(guildId, userId, net);
     winnings = adjustedPayout;
     resultText = `✨ **Two of a kind!** ×1.5${bonusMsg}`;
-    winDisplay = feeDisplay(gross, net) + (adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : "");
+    winDisplay = net.toLocaleString() + " " + R + (adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : "");
     await addBalance(guildId, userId, winnings);
   } else {
     const { cashback, bonusMsg } = applyActiveBonusOnLoss(guildId, userId, bet);
@@ -237,10 +231,10 @@ async function cmdCoinflip(interaction, userId, guildId, bet, choice) {
     const spinInterval = setInterval(async () => {
       if (spinIdx >= spinFrames.length) {
         clearInterval(spinInterval);
-        const result = Math.random() < 0.48 ? choice.toLowerCase() : (choice.toLowerCase() === "heads" ? "tails" : "heads");
+        const result = Math.random() < 0.5 ? choice.toLowerCase() : (choice.toLowerCase() === "heads" ? "tails" : "heads");
         const won = result === choice.toLowerCase();
         const gross    = won ? bet * 2 : 0;
-        const cfNet    = won ? applyFee(gross) : 0;
+        const cfNet    = won ? gross : 0;
         const { adjustedPayout: cfPayout, bonusMsg } = won
           ? applyActiveBonusToWin(guildId, userId, cfNet)
           : { adjustedPayout: 0, bonusMsg: "" };
@@ -250,7 +244,7 @@ async function cmdCoinflip(interaction, userId, guildId, bet, choice) {
         await checkWagerRole(btn, guildId, userId, rr);
         const resultFmt = result === "heads" ? "🟡 Heads" : "⚪ Tails";
         const winStr = won
-          ? `+${feeDisplay(gross, cfNet)}${cfPayout !== cfNet ? ` → **${cfPayout.toLocaleString()} ${R}** (bonus)` : ""}`
+          ? `+${cfNet.toLocaleString() + " " + R}${cfPayout !== cfNet ? ` → **${cfPayout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`;
         const embed = baseEmbed(won ? "🪙 You Won!" : "🪙 You Lost!", won ? COLORS.green : COLORS.red)
           .setDescription(`The coin landed on **${resultFmt}**!${won ? bonusMsg : lossMsg}`)
@@ -346,7 +340,7 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
         if (!isNaN(parseInt(bt)) && parseInt(bt) === num) { won = true; mult = 36; }
 
         const gross    = won ? Math.floor(bet * mult) : 0;
-        const winnings = won ? applyFee(gross) : 0;
+        const winnings = won ? gross : 0;
         const { adjustedPayout: rlPayout, bonusMsg } = won
           ? applyActiveBonusToWin(guildId, userId, winnings)
           : { adjustedPayout: 0, bonusMsg: "" };
@@ -357,7 +351,7 @@ async function cmdRoulette(interaction, userId, guildId, bet, betType) {
 
         const colorEmoji = { red: "🔴", black: "⚫", green: "🟢" };
         const winStr = won
-          ? `+${feeDisplay(gross, winnings)}${rlPayout !== winnings ? ` → **${rlPayout.toLocaleString()} ${R}** (bonus)` : ""}`
+          ? `+${winnings.toLocaleString() + " " + R}${rlPayout !== winnings ? ` → **${rlPayout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`;
         const embed = baseEmbed("🎡 Roulette", won ? COLORS.green : COLORS.red)
           .setDescription(`The ball landed on **${colorEmoji[color]} ${num}**!${won ? bonusMsg : lossMsg}`)
@@ -392,7 +386,7 @@ const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 function newDeck() {
   const deck = [];
   for (const s of SUITS) for (const r of RANKS) deck.push({ r, s });
-  return deck.sort(() => Math.random() - 0.5);
+  return shuffle(deck);
 }
 
 function cardValue(card) { return ["J","Q","K"].includes(card.r) ? 10 : card.r === "A" ? 11 : parseInt(card.r); }
@@ -420,7 +414,7 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
 
   if (pVal === 21) {
     const gross = Math.floor(bet * 2.5);
-    const win   = applyFee(gross);
+    const win   = gross;
     const { adjustedPayout: bjPayout, bonusMsg } = applyActiveBonusToWin(guildId, userId, win);
     await addBalance(guildId, userId, bjPayout);
     const rr = await recordGame(guildId, userId, "blackjack", bet, bjPayout - bet);
@@ -429,7 +423,7 @@ async function cmdBlackjack(interaction, userId, guildId, bet) {
     const embed = baseEmbed("🃏 Blackjack — Blackjack!", COLORS.gold)
       .setDescription(`**Your Hand:** ${showHand(playerHand)} = **21**\n**Dealer:** ${showHand([dealerHand[0]])} + 🂠\n\n🎉 **BLACKJACK! ×2.5!**${bonusMsg}`)
       .addFields(
-        { name: "Won",     value: `+${feeDisplay(gross, win)}${bjPayout !== win ? ` → **${bjPayout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
+        { name: "Won",     value: `+${win.toLocaleString() + " " + R}${bjPayout !== win ? ` → **${bjPayout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
         { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.reply({ embeds: [embed] });
@@ -520,11 +514,11 @@ async function resolveBlackjack(interaction, game) {
 
   if (dVal > 21 || pVal > dVal) {
     const gross = bet * 2;
-    const net   = applyFee(gross);
+    const net   = gross;
     const { adjustedPayout, bonusMsg: bm } = applyActiveBonusToWin(guildId, userId, net);
     winnings = adjustedPayout; bonusMsg = bm; color = COLORS.green;
     result = "🎉 **You Win!**";
-    winFieldVal = `+${feeDisplay(gross, net)}${adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : ""}`;
+    winFieldVal = `+${net.toLocaleString() + " " + R}${adjustedPayout !== net ? ` → **${adjustedPayout.toLocaleString()} ${R}** (bonus)` : ""}`;
     await addBalance(guildId, userId, winnings);
   } else if (pVal === dVal) {
     winnings = bet; color = COLORS.blue; // tie — no fee
@@ -566,23 +560,11 @@ async function cmdCrash(interaction, userId, guildId, bet) {
   startGame(guildId, userId, "Crash");
   await removeBalance(guildId, userId, bet);
 
-  // Casino-grade crash distribution (8% house edge):
-  // Formula: crashPoint = 0.92 / rand, but heavily weighted toward low values
-  // ~10% instant crash at 1.00x
-  // ~55% crash below 1.3x  (players almost made it — keeps them hooked)
-  // ~70% crash below 1.5x
-  // ~82% crash below 2x
-  // ~92% crash below 5x
-  // ~97% crash below 10x
-  // 3% chance of going higher — the carrot that keeps players coming back
+  // Fair crash distribution: P(crash >= x) ≈ 1/x for x > 1.
+  // The 25x cap keeps the maximum outcome bounded.
   function generateCrashPoint() {
-    const r = Math.random();
-    // 10% instant bust — devastating and common
-    if (r < 0.10) return 1.00;
-    // Remaining 90%: exponential weighted heavily toward low values
-    // We use a power curve: most mass near 1.0-1.5x
-    const normalized = (r - 0.10) / 0.90; // rescale to 0-1
-    const raw = 0.92 / Math.pow(normalized, 1.8);
+    const r = Math.max(Number.EPSILON, Math.random());
+    const raw = 1 / r;
     return Math.min(parseFloat(raw.toFixed(2)), 25.00);
   }
 
@@ -664,7 +646,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
     crashGames.delete(`${guildId}-${userId}`);
 
     const gross  = Math.floor(bet * current);
-    const net    = applyFee(gross);
+    const net    = gross;
     const { adjustedPayout: payout, bonusMsg } = applyActiveBonusToWin(guildId, userId, net);
     await addBalance(guildId, userId, payout);
     const rr = await recordGame(guildId, userId, "crash", bet, payout - bet);
@@ -674,7 +656,7 @@ async function cmdCrash(interaction, userId, guildId, bet) {
     const embed = baseEmbed("📈 Crash — Cashed Out!", COLORS.green)
       .setDescription(`You cashed out at **${current}×**!${bonusMsg}`)
       .addFields(
-        { name: "Won",     value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
+        { name: "Won",     value: `+${net.toLocaleString() + " " + R}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
         { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
       );
     await msg.edit({ embeds: [embed], components: [] }).catch(() => {});
@@ -710,7 +692,7 @@ function getMinesMultiplier(revealedCount, mineCount) {
   if (revealedCount === 0) return 1;
   let mult = 1;
   for (let i = 0; i < revealedCount; i++) mult *= (safe - i) / (MINES_TOTAL - i);
-  return parseFloat((1 / mult * 0.97).toFixed(2));
+  return parseFloat((1 / mult).toFixed(2));
 }
 
 function buildMinesRows(game, gameOver = false) {
@@ -745,14 +727,27 @@ async function sendMinesBoard(interaction, userId, guildId, isNew = false) {
   const game = mineGames.get(key);
   const mult = getMinesMultiplier(game.revealed.size, game.mineCount);
   const potential = Math.floor(game.bet * mult);
+  const canContinue = game.revealed.size < MINES_TOTAL - game.mineCount;
+  const nextMultiplier = canContinue
+    ? getMinesMultiplier(game.revealed.size + 1, game.mineCount)
+    : null;
+  const nextPotential = canContinue
+    ? Math.floor(game.bet * nextMultiplier)
+    : null;
   const rows = buildMinesRows(game, false);
 
   const embed = baseEmbed("💣 Mines", COLORS.purple)
     .setDescription(`Uncover gems, avoid mines!\n\n💣 Mines hidden: **${game.mineCount}**\n💎 Gems found: **${game.revealed.size} / ${MINES_TOTAL - game.mineCount}**`)
     .addFields(
-      { name: "Bet",        value: `${game.bet.toLocaleString()} ${R}`,  inline: true },
-      { name: "Multiplier", value: `\`${mult}×\``,                       inline: true },
-      { name: "Cash Out",   value: `${potential.toLocaleString()} ${R}`, inline: true }
+      { name: "Bet", value: `${game.bet.toLocaleString()} ${R}`, inline: true },
+      { name: "Current", value: `${mult}× • ${potential.toLocaleString()} ${R}`, inline: true },
+      {
+        name: "Next Click",
+        value: canContinue
+          ? `${nextMultiplier}× • ${nextPotential.toLocaleString()} ${R}`
+          : "🏆 All safe tiles found",
+        inline: true
+      }
     );
 
   const cashoutPayload = (disabled) => ({
@@ -788,7 +783,7 @@ async function endMinesGame(interaction, game, hitMine, clearedBoard) {
 
   const mult      = getMinesMultiplier(game.revealed.size, game.mineCount);
   const gross     = Math.floor(game.bet * mult);
-  const net       = hitMine ? 0 : applyFee(gross);
+  const net       = hitMine ? 0 : gross;
   const { adjustedPayout: payout, bonusMsg } = (!hitMine && net > 0)
     ? applyActiveBonusToWin(game.guildId, game.userId, net)
     : { adjustedPayout: 0, bonusMsg: "" };
@@ -809,7 +804,7 @@ async function endMinesGame(interaction, game, hitMine, clearedBoard) {
 
   const winStr = hitMine
     ? `-${game.bet.toLocaleString()} ${R}`
-    : `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`;
+    : `+${net.toLocaleString() + " " + R}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`;
 
   const resultEmbed = baseEmbed(title, color).setDescription(desc).addFields(
     { name: "Multiplier", value: `\`${mult}×\``,                                              inline: true },
@@ -865,9 +860,9 @@ const towerGames = new Map();
 const TOWER_FLOORS = 8;
 
 const TOWER_DIFFICULTIES = {
-  easy:   { bombs: 1, tiles: 3, multPerFloor: 1.3, label: "🟢 Easy"   }, // 3 tiles, 1 bomb
-  medium: { bombs: 1, tiles: 2, multPerFloor: 1.8, label: "🟡 Medium" }, // 2 tiles, 1 bomb (50/50)
-  hard:   { bombs: 2, tiles: 3, multPerFloor: 2.2, label: "🔴 Hard"   }, // 3 tiles, 2 bombs
+  easy:   { bombs: 1, tiles: 3, multPerFloor: 1.5, label: "🟢 Easy"   }, // 1/3 bomb, 2/3 safe
+  medium: { bombs: 1, tiles: 2, multPerFloor: 2.0, label: "🟡 Medium" }, // 1/2 bomb, 1/2 safe
+  hard:   { bombs: 2, tiles: 3, multPerFloor: 3.0, label: "🔴 Hard"   }, // 2/3 bomb, 1/3 safe
 };
 
 function getTowerMult(floor, difficulty) {
@@ -919,8 +914,7 @@ async function cmdTowers(interaction, userId, guildId, bet, difficulty) {
   const cfg = TOWER_DIFFICULTIES[diff];
   const bombsPerFloor = [];
   for (let i = 0; i < TOWER_FLOORS; i++) {
-    const positions = Array.from({ length: cfg.tiles }, (_, idx) => idx)
-      .sort(() => Math.random() - 0.5);
+    const positions = shuffle(Array.from({ length: cfg.tiles }, (_, idx) => idx));
     bombsPerFloor.push(positions.slice(0, cfg.bombs));
   }
 
@@ -966,12 +960,27 @@ async function sendTowerEmbed(interaction, userId, guildId, isNew, gameOver = fa
     ? `Pick **Left** or **Right** — one is a 💣! (50/50)\n\n${buildTowerGrid(game, gameOver, hitFloor)}`
     : `Pick **Left**, **Middle**, or **Right** — ${cfg.bombs === 2 ? "2 tiles hide" : "1 tile hides"} a 💣!\n\n${buildTowerGrid(game, gameOver, hitFloor)}`;
 
+  const canContinue = game.currentFloor < TOWER_FLOORS;
+  const nextMultiplier = canContinue
+    ? getTowerMult(game.currentFloor + 1, game.difficulty)
+    : null;
+  const nextPotential = canContinue
+    ? Math.floor(game.bet * nextMultiplier)
+    : null;
+  const currentPotential = Math.floor(game.bet * mult);
+
   const embed = baseEmbed(`🗼 Towers — ${cfg.label}`, COLORS.purple)
     .setDescription(desc)
     .addFields(
-      { name: "Floor",      value: `\`${game.currentFloor + 1} / ${TOWER_FLOORS}\``,      inline: true },
-      { name: "Multiplier", value: `\`${mult}×\``,                                         inline: true },
-      { name: "Cash Out",   value: `${Math.floor(game.bet * mult).toLocaleString()} ${R}`, inline: true }
+      { name: "Bet", value: `${game.bet.toLocaleString()} ${R}`, inline: true },
+      { name: "Current", value: `${mult}× • ${currentPotential.toLocaleString()} ${R}`, inline: true },
+      {
+        name: "Next Click",
+        value: canContinue
+          ? `${nextMultiplier}× • ${nextPotential.toLocaleString()} ${R}`
+          : "🏆 Top reached",
+        inline: true
+      }
     );
 
   if (isNew) await interaction.reply({ embeds: [embed], components: getTowerComponents(game.currentFloor, game.difficulty) });
@@ -991,7 +1000,7 @@ async function handleTowers(interaction) {
     towerGames.delete(key);
     const mult   = getTowerMult(game.currentFloor, game.difficulty);
     const gross  = Math.floor(game.bet * mult);
-    const net    = applyFee(gross);
+    const net    = gross;
     const { adjustedPayout: payout, bonusMsg } = applyActiveBonusToWin(guildId, user.id, net);
     await addBalance(guildId, user.id, payout);
     const rr = await recordGame(guildId, user.id, "towers", game.bet, payout - game.bet);
@@ -1002,7 +1011,7 @@ async function handleTowers(interaction) {
       .setDescription(`You walked away after **${game.currentFloor}** floor(s)! (${cfg.label})${bonusMsg}\n\n${buildTowerGrid(game)}`)
       .addFields(
         { name: "Multiplier", value: `\`${mult}×\``, inline: true },
-        { name: "Won",        value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
+        { name: "Won",        value: `+${net.toLocaleString() + " " + R}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
         { name: "Balance",    value: `${(await getBalance(guildId, user.id)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
@@ -1035,7 +1044,7 @@ async function handleTowers(interaction) {
     towerGames.delete(key);
     const mult   = getTowerMult(game.currentFloor, game.difficulty);
     const gross  = Math.floor(game.bet * mult);
-    const net    = applyFee(gross);
+    const net    = gross;
     const { adjustedPayout: payout, bonusMsg } = applyActiveBonusToWin(guildId, user.id, net);
     await addBalance(guildId, user.id, payout);
     const rr3 = await recordGame(guildId, user.id, "towers", game.bet, payout - game.bet);
@@ -1045,7 +1054,7 @@ async function handleTowers(interaction) {
       .setDescription(`You conquered the entire tower!${bonusMsg}\n\n${buildTowerGrid(game)}`)
       .addFields(
         { name: "Multiplier", value: `\`${mult}×\``, inline: true },
-        { name: "Won",        value: `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
+        { name: "Won",        value: `+${net.toLocaleString() + " " + R}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`, inline: true },
         { name: "Balance",    value: `${(await getBalance(guildId, user.id)).toLocaleString()} ${R}`, inline: true }
       );
     return interaction.editReply({ embeds: [embed], components: [] });
@@ -1070,79 +1079,23 @@ const KENO_PAYOUTS = {
   10: [0, 0, 0, 0, 1,  3,  10,  40,  200, 1000, 5000],
 };
 
-async function cmdKeno(interaction, userId, guildId, bet, picks) {
-  if (await checkActiveGame(interaction, guildId, userId)) return;
-  bet = parseInt(bet);
-  if (!await validateBet(interaction, guildId, userId, bet)) return;
-  if (!picks) {
-    return interaction.reply({ embeds: [baseEmbed("❌ No Picks", COLORS.red).setDescription(`Provide 2–10 numbers (1–80).`)], flags: MessageFlags.Ephemeral });
-  }
-  const chosen = [...new Set(picks.split(",").map(n => parseInt(n.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 80))];
-  if (chosen.length < 2 || chosen.length > 10) {
-    return interaction.reply({ embeds: [baseEmbed("❌ Invalid Picks", COLORS.red).setDescription("Pick between **2 and 10** unique numbers between 1–80.")], flags: MessageFlags.Ephemeral });
-  }
-
-  startGame(guildId, userId, "Keno");
-  await removeBalance(guildId, userId, bet);
-
-  // Draw 15 numbers from 1–80
-  const drawn = new Set();
-  while (drawn.size < 15) drawn.add(randInt(1, 80));
-
-  const hits = chosen.filter(n => drawn.has(n)).length;
-  const payoutTable = KENO_PAYOUTS[chosen.length];
-  const mult = payoutTable[hits] ?? 0;
-  const gross  = Math.floor(bet * mult);
-  const net    = applyFee(gross);
-  const { adjustedPayout: payout, bonusMsg } = (net > 0)
-    ? applyActiveBonusToWin(guildId, userId, net)
-    : { adjustedPayout: 0, bonusMsg: "" };
-  const { bonusMsg: lossMsg } = net === 0 ? applyActiveBonusOnLoss(guildId, userId, bet) : { bonusMsg: "" };
-  if (payout > 0) await addBalance(guildId, userId, payout);
-  const rr = await recordGame(guildId, userId, "keno", bet, payout > 0 ? payout - bet : -bet);
-  await checkWagerRole();
-
-  const drawnArr = [...drawn].sort((a, b) => a - b);
-  const drawnDisplay = drawnArr.map(n => chosen.includes(n) ? `**${n}**` : `${n}`).join(", ");
-
-  // Show payout table
-  const payoutPreview = payoutTable.map((m, i) => {
-    if (i === 0 || m === 0) return null;
-    return `${i}hit→×${m}`;
-  }).filter(Boolean).join("  ");
-
-  const embed = baseEmbed("🎱 Keno", payout > 0 ? COLORS.green : COLORS.red)
-    .setDescription(
-      `**Your picks (${chosen.length}):** ${chosen.join(", ")}\n` +
-      `**Drawn (15/80):** ${drawnDisplay}\n\n` +
-      `🎯 **Hits: ${hits} / ${chosen.length}**${payout > 0 ? bonusMsg : lossMsg}`
-    )
-    .addFields(
-      { name: "Multiplier",   value: `\`${mult}×\``, inline: true },
-      { name: payout > 0 ? "Won" : "Lost",
-        value: payout > 0
-          ? `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
-          : `-${bet.toLocaleString()} ${R}`,
-        inline: true },
-      { name: "Balance",      value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true },
-      { name: `Payouts (${chosen.length} picks)`, value: `\`${payoutPreview}\``, inline: false }
-    );
-
-  await interaction.reply({ embeds: [embed] });
-  endGame(guildId, userId);
+async function cmdKeno(interaction) {
+  await interaction.reply({
+    embeds: [
+      baseEmbed("🎱 Keno — Coming Soon", COLORS.purple)
+        .setDescription("Keno is **upcoming in a future update** and is currently unavailable. Your Tokens will not be charged.")
+    ],
+    flags: MessageFlags.Ephemeral
+  });
 }
 
 // ─── LIMBO ────────────────────────────────────────────────────────────────────
-// Player sets a target multiplier (1.01–100x).
-// House edge: 5%. Win probability = 95 / target (%)
-// At 2x → 47.5% win. At 10x → 9.5%. At 100x → 0.95%.
-// Animation counts up, stops the moment it crosses the target.
+// Fair Limbo distribution: P(result >= target) ≈ 1 / target.
 
 function generateLimboResult() {
-  const r = Math.random();
-  if (r < 0.03) return 1.00; // 3% instant bust
-  const raw = 0.92 / r;      // 8% house edge — harder to win
-  return Math.min(parseFloat(raw.toFixed(2)), 50.00);
+  const r = Math.max(Number.EPSILON, Math.random());
+  const raw = 1 / r;
+  return Math.min(parseFloat(raw.toFixed(2)), 100.00);
 }
 
 async function cmdLimbo(interaction, userId, guildId, bet, target) {
@@ -1160,7 +1113,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
   const finalResult = parseFloat(result.toFixed(2));
   const won     = finalResult >= target;
   const gross   = won ? Math.floor(bet * target) : 0;
-  const net     = won ? applyFee(gross) : 0;
+  const net     = won ? gross : 0;
   const { adjustedPayout: payout, bonusMsg } = won
     ? applyActiveBonusToWin(guildId, userId, net)
     : { adjustedPayout: 0, bonusMsg: "" };
@@ -1214,7 +1167,7 @@ async function cmdLimbo(interaction, userId, guildId, bet, target) {
       { name: "Bet",     value: `${bet.toLocaleString()} ${R}`, inline: true },
       { name: didWin ? "Won" : "Lost",
         value: didWin
-          ? `+${feeDisplay(gross, net)}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
+          ? `+${net.toLocaleString() + " " + R}${payout !== net ? ` → **${payout.toLocaleString()} ${R}** (bonus)` : ""}`
           : `-${bet.toLocaleString()} ${R}`,
         inline: true },
       { name: "Balance", value: `${(await getBalance(guildId, userId)).toLocaleString()} ${R}`, inline: true }
