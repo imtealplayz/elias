@@ -3,6 +3,9 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   MessageFlags,
   PermissionFlagsBits,
   SeparatorBuilder,
@@ -14,7 +17,6 @@ import { config } from './config.js';
 import { addBalance, formatTokens, getBalance, removeBalance, TEAL } from './teal.js';
 import { buyStock, getStocks, getUserPortfolio, resetStocks, sellStock } from './db.js';
 
-const STOCK_PASSWORD = 'zip123';
 const MAX_BUY_QUANTITY = 10;
 const STOCK_CURRENCY_LABEL = TEAL;
 const STOCK_OWNER_ID = '926063716057894953';
@@ -27,6 +29,146 @@ function divider() {
 
 function text(content) {
   return new TextDisplayBuilder().setContent(content);
+}
+
+const stockPanels = new Map();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function refreshStockPanel(channelId) {
+  const panel = stockPanels.get(channelId);
+  if (!panel) return;
+
+  try {
+    const stocks = await getStocks();
+    await panel.message.edit({
+      flags: MessageFlags.IsComponentsV2,
+      components: buildStocksComponents(stocks)
+    });
+  } catch (error) {
+    console.warn('Stock panel refresh failed:', error?.message || error);
+  }
+}
+
+function startStockPanelRefresh(message) {
+  const channelId = message.channelId;
+
+  const existing = stockPanels.get(channelId);
+  if (existing?.timer) clearInterval(existing.timer);
+
+  const timer = setInterval(() => {
+    refreshStockPanel(channelId);
+  }, 60_000);
+
+  stockPanels.set(channelId, { message, timer });
+}
+
+function buildStockModal(mode) {
+  const verb = mode === 'buy' ? 'Buy' : 'Sell';
+  return new ModalBuilder()
+    .setCustomId(`stocks:${mode}_modal`)
+    .setTitle(`${verb} Stock`)
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('symbol')
+          .setLabel('Stock symbol')
+          .setPlaceholder('ELIAS, NOVA, or BYTE')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(5)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('amount')
+          .setLabel('Number of shares')
+          .setPlaceholder('1-10')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(2)
+      )
+    );
+}
+
+async function processStockTrade(interaction, mode) {
+  const symbol = normalizeSymbol(interaction.fields.getTextInputValue('symbol'));
+  const quantity = parseQuantity(interaction.fields.getTextInputValue('amount'), MAX_BUY_QUANTITY);
+
+  if (!['ELIAS', 'NOVA', 'BYTE'].includes(symbol)) {
+    return interaction.editReply({ content: '❌ Invalid stock. Choose **ELIAS**, **NOVA**, or **BYTE**.' });
+  }
+  if (!quantity) {
+    return interaction.editReply({ content: `❌ Share amount must be between **1 and ${MAX_BUY_QUANTITY}**.` });
+  }
+
+  if (mode === 'buy') {
+    let charged = 0;
+
+    try {
+      const market = await getStocks();
+      const stockPreview = market.find((stock) => stock.symbol === symbol);
+      if (!stockPreview) throw new Error('STOCK_NOT_FOUND');
+
+      const cost = Number((Number(stockPreview.price) * quantity).toFixed(2));
+      const balance = await getBalance(config.guildId, interaction.user.id);
+
+      if (balance < cost) {
+        return interaction.editReply({
+          content: '❌ You need **' + cost.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**, but only have **' + formatTokens(balance) + '**.'
+        });
+      }
+
+      charged = Math.ceil(cost);
+      await removeBalance(config.guildId, interaction.user.id, charged);
+
+      const result = await buyStock(interaction.user.id, symbol, quantity);
+
+      await interaction.editReply({
+        content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** for **' + charged.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**.\n' +
+          'New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\n' +
+          'These shares are locked from external withdrawal for **7 days**.\n' +
+          'Remaining balance: **' + formatTokens(await getBalance(config.guildId, interaction.user.id)) + '**.'
+      });
+    } catch (error) {
+      console.error('Stock purchase error:', error?.message || error);
+
+      if (charged > 0) {
+        await addBalance(config.guildId, interaction.user.id, charged).catch(() => {});
+      }
+
+      let message = '❌ I could not complete that purchase. Your Tokens were refunded.';
+      if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Your Tokens were not charged.';
+      if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left. Your Tokens were refunded.';
+      if (error?.message === 'INSUFFICIENT_FUNDS') message = '❌ You do not have enough Tokens for that purchase.';
+      await interaction.editReply({ content: message });
+    }
+
+    await refreshStockPanel(interaction.channelId);
+    return;
+  }
+
+  try {
+    const result = await sellStock(interaction.user.id, symbol, quantity);
+    const saleValue = Math.floor(Number(result.totalValue || 0));
+    const newBalance = await addBalance(config.guildId, interaction.user.id, saleValue);
+
+    await interaction.editReply({
+      content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** for **' + saleValue.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**.\n' +
+        'New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\n' +
+        'New balance: **' + formatTokens(newBalance) + '**.'
+    });
+  } catch (error) {
+    console.error('Stock sale error:', error?.message || error);
+    let message = '❌ I could not complete that sale. Try again.';
+    if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist.';
+    if (error?.message === 'INSUFFICIENT_SHARES') message = '❌ You do not own enough of that stock to sell that amount.';
+    if (error?.message === 'SHARES_RESERVED') message = '❌ Some of those shares are reserved for a pending withdrawal.';
+    await interaction.editReply({ content: message });
+  }
+
+  await refreshStockPanel(interaction.channelId);
 }
 
 function buildStocksComponents(stocks) {
@@ -107,34 +249,7 @@ export async function registerStockCommands(client, legacyGuildId, additionalCom
       .setDescription('Stock market commands')
       .addSubcommand((sub) => sub
         .setName('view')
-        .setDescription('View the demo stock market'))
-      .addSubcommand((sub) => sub
-        .setName('buy')
-        .setDescription('Buy stocks')
-        .addStringOption((o) => o
-          .setName('symbol')
-          .setDescription('Stock symbol')
-          .setRequired(true)
-          .addChoices(
-            { name: 'ELIAS', value: 'ELIAS' },
-            { name: 'NOVA', value: 'NOVA' },
-            { name: 'BYTE', value: 'BYTE' }
-          ))
-        .addIntegerOption((o) => o.setName('amount').setDescription('Amount to buy (1-10)').setMinValue(1).setMaxValue(10).setRequired(true))
-        .addStringOption((o) => o.setName('password').setDescription('Buy password').setRequired(true)))
-      .addSubcommand((sub) => sub
-        .setName('sell')
-        .setDescription('Sell stocks')
-        .addStringOption((o) => o
-          .setName('symbol')
-          .setDescription('Stock symbol')
-          .setRequired(true)
-          .addChoices(
-            { name: 'ELIAS', value: 'ELIAS' },
-            { name: 'NOVA', value: 'NOVA' },
-            { name: 'BYTE', value: 'BYTE' }
-          ))
-        .addIntegerOption((o) => o.setName('amount').setDescription('Amount to sell').setMinValue(1).setRequired(true)))
+        .setDescription('Open the stock market panel'))
       .addSubcommand((sub) => sub
         .setName('reset')
         .setDescription('Reset the entire stock market and all portfolios'))
@@ -211,70 +326,6 @@ export async function handleStocksChatInput(interaction) {
       return true;
     }
 
-    if (subcommand === 'buy' || subcommand === 'sell') {
-      const symbol = normalizeSymbol(interaction.options.getString('symbol'));
-      const quantity = interaction.options.getInteger('amount');
-
-      if (subcommand === 'buy') {
-        const password = interaction.options.getString('password');
-        if (password !== STOCK_PASSWORD) {
-          await interaction.reply({ content: '❌ Incorrect password.', ephemeral: true });
-          return true;
-        }
-
-        await interaction.deferReply({ ephemeral: true });
-        let charged = 0;
-        try {
-          const market = await getStocks();
-          const stockPreview = market.find((stock) => stock.symbol === symbol);
-          if (!stockPreview) throw new Error('STOCK_NOT_FOUND');
-
-          const cost = Number((Number(stockPreview.price) * Number(quantity)).toFixed(2));
-          const balance = await getBalance(config.guildId, interaction.user.id);
-          if (balance < cost) {
-            await interaction.editReply({
-              content: '❌ You need **' + cost.toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**, but only have **' + formatTokens(balance) + '**.'
-            });
-            return true;
-          }
-
-          const chargeAmount = Math.ceil(cost);
-          await removeBalance(config.guildId, interaction.user.id, chargeAmount);
-          charged = chargeAmount;
-
-          const result = await buyStock(interaction.user.id, symbol, quantity);
-          await interaction.editReply({
-            content: '✅ Bought **' + quantity + ' ' + result.stock.symbol + '** for **' + charged.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nRemaining balance: **' + formatTokens(await getBalance(config.guildId, interaction.user.id)) + '**.'
-          });
-        } catch (error) {
-          console.error('Stock purchase error:', error?.message || error);
-          if (charged > 0) await addBalance(config.guildId, interaction.user.id, charged).catch(() => {});
-          let message = '❌ I could not complete that purchase. Your Tokens was refunded.';
-          if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Your Tokens was not charged.';
-          if (error?.message === 'INSUFFICIENT_SUPPLY') message = '❌ There are not enough shares of that stock left. Your Tokens was refunded.';
-          if (error?.message === 'INSUFFICIENT_FUNDS') message = '❌ You do not have enough Tokens for that purchase.';
-          await interaction.editReply({ content: message });
-        }
-        return true;
-      }
-
-      await interaction.deferReply({ ephemeral: true });
-      try {
-        const result = await sellStock(interaction.user.id, symbol, quantity);
-        const saleValue = Math.floor(Number(result.totalValue || 0));
-        const newBalance = await addBalance(config.guildId, interaction.user.id, saleValue);
-        await interaction.editReply({
-          content: '✅ Sold **' + quantity + ' ' + result.stock.symbol + '** for **' + saleValue.toLocaleString() + ' ' + STOCK_CURRENCY_LABEL + '**. New price: **' + Number(result.stock.price).toFixed(2) + ' ' + STOCK_CURRENCY_LABEL + '**.\nNew balance: **' + formatTokens(newBalance) + '**.'
-        });
-      } catch (error) {
-        console.error('Stock sale error:', error?.message || error);
-        let message = '❌ I could not complete that sale. Try again.';
-        if (error?.message === 'STOCK_NOT_FOUND') message = '❌ That stock does not exist. Check `/stocks view` for the current symbols.';
-        if (error?.message === 'INSUFFICIENT_SHARES') message = '❌ You do not own enough of that stock to sell that amount.';
-        await interaction.editReply({ content: message });
-      }
-      return true;
-    }
     if (subcommand === 'view') {
       await interaction.deferReply();
       try {
@@ -283,6 +334,8 @@ export async function handleStocksChatInput(interaction) {
           flags: MessageFlags.IsComponentsV2,
           components: buildStocksComponents(stocks)
         });
+        const panelMessage = await interaction.fetchReply();
+        startStockPanelRefresh(panelMessage);
       } catch (error) {
         console.error('Stock market load error:', error?.message || error);
         await interaction.editReply({
@@ -323,18 +376,31 @@ export async function handleStocksChatInput(interaction) {
 }
 
 export async function handleStocksInteraction(interaction) {
-  if (interaction.isButton() && interaction.customId === 'stocks:refresh') {
-    await interaction.deferUpdate();
-    try {
-      const stocks = await getStocks();
-      await interaction.editReply({
-        flags: MessageFlags.IsComponentsV2,
-        components: buildStocksComponents(stocks)
-      });
-    } catch (error) {
-      console.error('Stock refresh error:', error?.message || error);
+  if (interaction.isButton()) {
+    if (interaction.customId === 'stocks:buy') {
+      await interaction.showModal(buildStockModal('buy'));
+      return true;
     }
-    return true;
+
+    if (interaction.customId === 'stocks:sell') {
+      await interaction.showModal(buildStockModal('sell'));
+      return true;
+    }
+
+    if (interaction.customId === 'stocks:refresh') {
+      await interaction.deferUpdate();
+      await refreshStockPanel(interaction.channelId);
+      return true;
+    }
+  }
+
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId === 'stocks:buy_modal' || interaction.customId === 'stocks:sell_modal') {
+      const mode = interaction.customId === 'stocks:buy_modal' ? 'buy' : 'sell';
+      await interaction.deferReply({ ephemeral: true });
+      await processStockTrade(interaction, mode);
+      return true;
+    }
   }
 
   return false;
