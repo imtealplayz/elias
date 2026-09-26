@@ -17,10 +17,16 @@ create table if not exists public.stock_holdings (
   discord_id text not null,
   stock_id bigint not null references public.stocks(id) on delete cascade,
   quantity integer not null check (quantity > 0),
+  reserved_quantity integer not null default 0 check (reserved_quantity >= 0 and reserved_quantity <= quantity),
+  locked_until timestamptz,
   primary key (discord_id, stock_id)
 );
 
+alter table public.stock_holdings add column if not exists reserved_quantity integer not null default 0;
+alter table public.stock_holdings add column if not exists locked_until timestamptz;
+update public.stock_holdings set reserved_quantity = 0 where reserved_quantity is null;
 create index if not exists stock_holdings_user_idx on public.stock_holdings(discord_id);
+create index if not exists stock_holdings_locked_until_idx on public.stock_holdings(locked_until);
 
 insert into public.stocks (symbol, name, price)
 values
