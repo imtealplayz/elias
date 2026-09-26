@@ -3,7 +3,27 @@ import { config } from './config.js';
 import { request } from './db.js';
 
 export const TEAL = 'Tokens';
-export const DAILY_REWARD = 250;
+export const DAILY_REWARDS = [
+  { label: 'Deposit Boost +10%', value: 0, type: 'bonus', icon: '📈', weight: 24 },
+  { label: 'Deposit Boost +25%', value: 0, type: 'bonus', icon: '🚀', weight: 20 },
+  { label: 'Cashback 5%', value: 0, type: 'bonus', icon: '💸', weight: 18 },
+  { label: '5 Tokens', value: 5, type: 'tokens', icon: '💰', weight: 10 },
+  { label: '10 Tokens', value: 10, type: 'tokens', icon: '💎', weight: 6 },
+  { label: '25 Tokens', value: 25, type: 'tokens', icon: '💎', weight: 4 },
+  { label: '50 Tokens', value: 50, type: 'tokens', icon: '🏅', weight: 2.5 },
+  { label: '100 Tokens', value: 100, type: 'tokens', icon: '🥇', weight: 1.5 },
+  { label: '200 Tokens', value: 200, type: 'tokens', icon: '👑', weight: 0.8 }
+];
+
+function spinDailyReward() {
+  const total = DAILY_REWARDS.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * total;
+  for (const item of DAILY_REWARDS) {
+    roll -= item.weight;
+    if (roll <= 0) return item;
+  }
+  return DAILY_REWARDS[0];
+}
 
 export const COLORS = {
   gold: 0xF4C542,
@@ -69,21 +89,34 @@ async function saveUser(user) {
     method: 'PATCH',
     query: `?guild_id=eq.${encode(user.guild_id)}&discord_id=eq.${encode(user.discord_id)}`,
     body: {
-      balance: Math.max(0, Math.floor(Number(user.balance) || 0)),
-      total_wagered: Math.max(0, Math.floor(Number(user.total_wagered) || 0)),
-      total_deposited: Math.max(0, Math.floor(Number(user.total_deposited) || 0)),
-      total_daily_claimed: Math.max(0, Math.floor(Number(user.total_daily_claimed) || 0)),
-      last_daily: Math.max(0, Math.floor(Number(user.last_daily) || 0)),
-      stats: user.stats && typeof user.stats === 'object' ? user.stats : {},
-      updated_at: new Date().toISOString()
-    },
-    prefer: 'return=representation'
-  });
-  return rows?.[0] || null;
-}
+      balance: Math.max(0, Math.floor(Number(user.balance)export async function claimDaily(guildId, discordId) {
+  const user = await getUser(guildId, discordId);
+  const now = Date.now();
+  const cooldown = 24 * 60 * 60 * 1000;
+  const remaining = cooldown - (now - user.last_daily);
 
-export async function getBalance(guildId, discordId) {
-  return (await getUser(guildId, discordId)).balance;
+  if (remaining > 0) {
+    return { claimed: false, remaining, reward: null, balance: user.balance };
+  }
+
+  const reward = spinDailyReward();
+  user.last_daily = now;
+
+  if (reward.type === 'tokens' && reward.value > 0) {
+    user.balance += reward.value;
+    user.total_daily_claimed += reward.value;
+  }
+
+  await saveUser(user);
+
+  return {
+    claimed: true,
+    remaining: cooldown,
+    reward,
+    balance: user.balance
+  };
+}
+er(guildId, discordId)).balance;
 }
 
 export async function depositBalance(guildId, discordId, amount) {
