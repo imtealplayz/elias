@@ -8,9 +8,11 @@ import { config } from './config.js';
 import {
   COLORS,
   TEAL,
+  DAILY_REWARD,
   addBalance,
   baseEmbed,
-  formatTeal,
+  claimDaily,
+  formatTokens,
   getBalance,
   getEconomyProfile,
   getLeaderboard,
@@ -77,7 +79,7 @@ function usageError(interaction, description) {
 
 function formatSigned(amount) {
   const value = Math.floor(Number(amount) || 0);
-  return value >= 0 ? `+${formatTeal(value)}` : `-${formatTeal(Math.abs(value))}`;
+  return value >= 0 ? `+${formatTokens(value)}` : `-${formatTokens(Math.abs(value))}`;
 }
 
 async function cmdBalance(interaction) {
@@ -85,9 +87,32 @@ async function cmdBalance(interaction) {
 
   await interaction.reply({
     embeds: [
-      baseEmbed('💰 Teal Balance', COLORS.teal)
-        .setDescription(`You have **${formatTeal(balance)}**.`)
+      baseEmbed('💰 Tokens Balance', COLORS.teal)
+        .setDescription(`You have **${formatTokens(balance)}**.`)
         .setThumbnail(interaction.user.displayAvatarURL())
+    ]
+  });
+}
+
+async function cmdDaily(interaction) {
+  const result = await claimDaily(interaction.guildId, interaction.user.id);
+
+  if (!result.claimed) {
+    const nextTs = Math.floor((Date.now() + result.remaining) / 1000);
+    return interaction.reply({
+      embeds: [
+        baseEmbed('⏳ Daily Already Claimed', COLORS.gold)
+          .setDescription(`You already claimed your daily reward. Come back <t:${nextTs}:R>.`)
+      ],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  await interaction.reply({
+    embeds: [
+      baseEmbed('🎁 Daily Reward', COLORS.green)
+        .setDescription(`You received **+${formatTokens(result.reward)}**.`)
+        .addFields({ name: 'New Balance', value: formatTokens(result.balance), inline: true })
     ]
   });
 }
@@ -97,7 +122,7 @@ async function cmdLeaderboard(interaction) {
 
   if (!rows.length) {
     await interaction.reply({
-      embeds: [baseEmbed('🏆 Teal Leaderboard', COLORS.gold).setDescription('Nobody has a Teal balance yet.')],
+      embeds: [baseEmbed('🏆 Tokens Leaderboard', COLORS.gold).setDescription('Nobody has a Tokens balance yet.')],
       allowedMentions: { parse: [] }
     });
     return;
@@ -107,12 +132,12 @@ async function cmdLeaderboard(interaction) {
   const lines = await Promise.all(rows.map(async (row, index) => {
     const user = await interaction.client.users.fetch(row.discord_id).catch(() => null);
     const name = user?.username || `User ${row.discord_id}`;
-    return `${medals[index] || `**${index + 1}.**`} **${name}** — ${formatTeal(row.balance)}`;
+    return `${medals[index] || `**${index + 1}.**`} **${name}** — ${formatTokens(row.balance)}`;
   }));
 
   await interaction.reply({
     embeds: [
-      baseEmbed('🏆 Teal Leaderboard', COLORS.gold)
+      baseEmbed('🏆 Tokens Leaderboard', COLORS.gold)
         .setDescription(lines.join('\n'))
     ]
   });
@@ -158,11 +183,11 @@ async function cmdProfile(interaction) {
   const overall = wins + losses;
   const winRate = overall ? ((wins / overall) * 100).toFixed(1) : '0.0';
 
-  const embed = baseEmbed(`📊 ${target.username}'s Teal Profile`, COLORS.blue)
+  const embed = baseEmbed(`📊 ${target.username}'s Tokens Profile`, COLORS.blue)
     .setThumbnail(target.displayAvatarURL())
     .addFields(
-      { name: '💰 Balance', value: formatTeal(data.balance), inline: true },
-      { name: '🎲 Total Wagered', value: formatTeal(data.total_wagered), inline: true },
+      { name: '💰 Balance', value: formatTokens(data.balance), inline: true },
+      { name: '🎲 Total Wagered', value: formatTokens(data.total_wagered), inline: true },
       { name: '📈 Overall W/L', value: `${wins}/${losses} • ${winRate}% win rate`, inline: true },
       { name: '💹 Net Game Profit', value: formatSigned(profit), inline: false },
       {
@@ -193,8 +218,8 @@ async function cmdTip(interaction) {
   if (senderBalance < amount) {
     return interaction.reply({
       embeds: [
-        baseEmbed('❌ Insufficient Teal', COLORS.red)
-          .setDescription(`You need **${formatTeal(amount)}**, but you only have **${formatTeal(senderBalance)}**.`)
+        baseEmbed('❌ Insufficient Tokens', COLORS.red)
+          .setDescription(`You need **${formatTokens(amount)}**, but you only have **${formatTokens(senderBalance)}**.`)
       ],
       flags: MessageFlags.Ephemeral
     });
@@ -211,14 +236,14 @@ async function cmdTip(interaction) {
 
   await interaction.reply({
     embeds: [
-      baseEmbed('💸 Teal Sent', COLORS.green)
-        .setDescription(`You sent **${formatTeal(amount)}** to <@${target.id}>.`)
-        .addFields({ name: 'Your Balance', value: formatTeal(await getBalance(interaction.guildId, interaction.user.id)), inline: true })
+      baseEmbed('💸 Tokens Sent', COLORS.green)
+        .setDescription(`You sent **${formatTokens(amount)}** to <@${target.id}>.`)
+        .addFields({ name: 'Your Balance', value: formatTokens(await getBalance(interaction.guildId, interaction.user.id)), inline: true })
     ]
   });
 
   try {
-    await target.send(`💸 You received **${formatTeal(amount)}** from **${interaction.user.username}** in **${interaction.guild.name}**. Your new balance is **${formatTeal(newBalance)}**.`);
+    await target.send(`💸 You received **${formatTokens(amount)}** from **${interaction.user.username}** in **${interaction.guild.name}**. Your new balance is **${formatTokens(newBalance)}**.`);
   } catch {}
 }
 
@@ -235,7 +260,7 @@ async function cmdRain(interaction) {
 
   if (activeRains.has(interaction.guildId)) {
     return interaction.reply({
-      embeds: [baseEmbed('⛈️ Rain Active', COLORS.red).setDescription('There is already an active Teal rain in this server.')],
+      embeds: [baseEmbed('⛈️ Rain Active', COLORS.red).setDescription('There is already an active Tokens rain in this server.')],
       flags: MessageFlags.Ephemeral
     });
   }
@@ -243,13 +268,13 @@ async function cmdRain(interaction) {
   const balance = await getBalance(interaction.guildId, interaction.user.id);
   if (balance < amount) {
     return interaction.reply({
-      embeds: [baseEmbed('❌ Insufficient Teal', COLORS.red).setDescription(`You need **${formatTeal(amount)}**, but only have **${formatTeal(balance)}**.`)],
+      embeds: [baseEmbed('❌ Insufficient Tokens', COLORS.red).setDescription(`You need **${formatTokens(amount)}**, but only have **${formatTokens(balance)}**.`)],
       flags: MessageFlags.Ephemeral
     });
   }
 
   await removeBalance(interaction.guildId, interaction.user.id, amount);
-  await interaction.reply({ content: '🌧️ Teal rain started!', flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: '🌧️ Tokens rain started!', flags: MessageFlags.Ephemeral });
 
   const channel = interaction.channel;
   if (!channel) return;
@@ -257,9 +282,9 @@ async function cmdRain(interaction) {
   const endAt = Math.floor((Date.now() + duration * 1000) / 1000);
   const message = await channel.send({
     embeds: [
-      baseEmbed('🌧️ Teal Rain', COLORS.teal)
+      baseEmbed('🌧️ Tokens Rain', COLORS.teal)
         .setDescription(
-          `**<@${interaction.user.id}>** is making it rain!\n\nReact with 🌧️ to claim an equal share.\n\n⏰ Ends <t:${endAt}:R>\n💰 Prize pool: **${formatTeal(amount)}**`
+          `**<@${interaction.user.id}>** is making it rain!\n\nReact with 🌧️ to claim an equal share.\n\n⏰ Ends <t:${endAt}:R>\n💰 Prize pool: **${formatTokens(amount)}**`
         )
     ]
   });
@@ -285,7 +310,7 @@ async function cmdRain(interaction) {
       await fresh.edit({
         embeds: [
           baseEmbed('🌧️ Rain Ended', COLORS.red)
-            .setDescription(`Nobody joined. **${formatTeal(amount)}** was lost.`)
+            .setDescription(`Nobody joined. **${formatTokens(amount)}** was lost.`)
         ]
       }).catch(() => {});
       return;
@@ -300,9 +325,9 @@ async function cmdRain(interaction) {
       embeds: [
         baseEmbed('🌧️ Rain Ended!', COLORS.green)
           .setDescription(
-            `**${formatTeal(amount)}** was split between **${participants.size}** participant(s).\n\n${[...participants].map((id) => `<@${id}>`).join(', ')}`
+            `**${formatTokens(amount)}** was split between **${participants.size}** participant(s).\n\n${[...participants].map((id) => `<@${id}>`).join(', ')}`
           )
-          .addFields({ name: 'Each Received', value: formatTeal(share), inline: true })
+          .addFields({ name: 'Each Received', value: formatTokens(share), inline: true })
       ]
     }).catch(() => {});
   }, duration * 1000);
@@ -312,7 +337,7 @@ async function requireOwner(interaction) {
   if (interaction.user.id === OWNER_ID) return true;
 
   await interaction.reply({
-    embeds: [baseEmbed('❌ No Permission', COLORS.red).setDescription('Only the Teal economy owner can use this command.')],
+    embeds: [baseEmbed('❌ No Permission', COLORS.red).setDescription('Only the Tokens economy owner can use this command.')],
     flags: MessageFlags.Ephemeral
   });
   return false;
@@ -324,18 +349,18 @@ async function cmdGive(interaction) {
   const target = interaction.options.getUser('user');
   const amount = interaction.options.getInteger('amount');
   if (!target || !Number.isInteger(amount) || amount < 1) {
-    return usageError(interaction, 'Provide a valid user and a positive Teal amount.');
+    return usageError(interaction, 'Provide a valid user and a positive Tokens amount.');
   }
 
   const balance = await addBalance(interaction.guildId, target.id, amount);
 
   await interaction.reply({
     embeds: [
-      baseEmbed('✅ Teal Given', COLORS.green)
+      baseEmbed('✅ Tokens Given', COLORS.green)
         .addFields(
           { name: 'User', value: `<@${target.id}>`, inline: true },
-          { name: 'Given', value: `+${formatTeal(amount)}`, inline: true },
-          { name: 'New Balance', value: formatTeal(balance), inline: true }
+          { name: 'Given', value: `+${formatTokens(amount)}`, inline: true },
+          { name: 'New Balance', value: formatTokens(balance), inline: true }
         )
     ]
   });
@@ -347,7 +372,7 @@ async function cmdTake(interaction) {
   const target = interaction.options.getUser('user');
   const amount = interaction.options.getInteger('amount');
   if (!target || !Number.isInteger(amount) || amount < 1) {
-    return usageError(interaction, 'Provide a valid user and a positive Teal amount.');
+    return usageError(interaction, 'Provide a valid user and a positive Tokens amount.');
   }
 
   const balance = await getBalance(interaction.guildId, target.id);
@@ -355,11 +380,11 @@ async function cmdTake(interaction) {
 
   await interaction.reply({
     embeds: [
-      baseEmbed('✅ Teal Taken', COLORS.gold)
+      baseEmbed('✅ Tokens Taken', COLORS.gold)
         .addFields(
           { name: 'User', value: `<@${target.id}>`, inline: true },
-          { name: 'Taken', value: `-${formatTeal(Math.min(amount, balance))}`, inline: true },
-          { name: 'New Balance', value: formatTeal(newBalance), inline: true }
+          { name: 'Taken', value: `-${formatTokens(Math.min(amount, balance))}`, inline: true },
+          { name: 'New Balance', value: formatTokens(newBalance), inline: true }
         )
     ]
   });
@@ -369,14 +394,14 @@ async function cmdResetBalance(interaction) {
   if (!(await requireOwner(interaction))) return;
 
   const target = interaction.options.getUser('user');
-  if (!target) return usageError(interaction, 'Choose the user whose Teal balance should be reset.');
+  if (!target) return usageError(interaction, 'Choose the user whose Tokens balance should be reset.');
 
   await resetBalance(interaction.guildId, target.id);
 
   await interaction.reply({
     embeds: [
-      baseEmbed('♻️ Teal Balance Reset', COLORS.gold)
-        .setDescription(`<@${target.id}>'s Teal balance is now **0 ${TEAL}**.`)
+      baseEmbed('♻️ Tokens Balance Reset', COLORS.gold)
+        .setDescription(`<@${target.id}>'s Tokens balance is now **0 ${TEAL}**.`)
     ]
   });
 }
@@ -385,46 +410,50 @@ export function getEconomyCommands() {
   return [
     new SlashCommandBuilder()
       .setName('balance')
-      .setDescription('View your Teal currency balance'),
+      .setDescription('View your Tokens currency balance'),
+
+    new SlashCommandBuilder()
+      .setName('daily')
+      .setDescription('Claim your daily Tokens reward'),
 
     new SlashCommandBuilder()
       .setName('leaderboard')
-      .setDescription('View the richest Teal users'),
+      .setDescription('View the richest Tokens users'),
 
     new SlashCommandBuilder()
       .setName('profile')
-      .setDescription('View a Teal gambling profile')
+      .setDescription('View a Tokens gambling profile')
       .addUserOption((o) => o.setName('user').setDescription('User to view')),
 
     new SlashCommandBuilder()
       .setName('tip')
-      .setDescription('Send Teal to another user')
+      .setDescription('Send Tokens to another user')
       .addUserOption((o) => o.setName('user').setDescription('User to tip').setRequired(true))
-      .addIntegerOption((o) => o.setName('amount').setDescription('Teal amount').setMinValue(1).setRequired(true)),
+      .addIntegerOption((o) => o.setName('amount').setDescription('Tokens amount').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('rain')
-      .setDescription('Make it rain Teal')
-      .addIntegerOption((o) => o.setName('amount').setDescription('Teal prize pool').setMinValue(1).setRequired(true))
+      .setDescription('Make it rain Tokens')
+      .addIntegerOption((o) => o.setName('amount').setDescription('Tokens prize pool').setMinValue(1).setRequired(true))
       .addIntegerOption((o) => o.setName('duration').setDescription('Duration in seconds').setMinValue(10).setMaxValue(300).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('give')
-      .setDescription('Give Teal to a user')
+      .setDescription('Give Tokens to a user')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-      .addUserOption((o) => o.setName('user').setDescription('User to receive Teal').setRequired(true))
-      .addIntegerOption((o) => o.setName('amount').setDescription('Teal amount').setMinValue(1).setRequired(true)),
+      .addUserOption((o) => o.setName('user').setDescription('User to receive Tokens').setRequired(true))
+      .addIntegerOption((o) => o.setName('amount').setDescription('Tokens amount').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('take')
-      .setDescription('Take Teal from a user')
+      .setDescription('Take Tokens from a user')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-      .addUserOption((o) => o.setName('user').setDescription('User to take Teal from').setRequired(true))
-      .addIntegerOption((o) => o.setName('amount').setDescription('Teal amount').setMinValue(1).setRequired(true)),
+      .addUserOption((o) => o.setName('user').setDescription('User to take Tokens from').setRequired(true))
+      .addIntegerOption((o) => o.setName('amount').setDescription('Tokens amount').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('resetbalance')
-      .setDescription('Reset a user\'s Teal balance to zero')
+      .setDescription('Reset a user\'s Tokens balance to zero')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .addUserOption((o) => o.setName('user').setDescription('User whose balance to reset').setRequired(true)),
 
@@ -434,42 +463,42 @@ export function getEconomyCommands() {
 
     new SlashCommandBuilder()
       .setName('slots')
-      .setDescription('Spin the Teal slot machine')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true)),
+      .setDescription('Spin the Tokens slot machine')
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('coinflip')
       .setDescription('Flip a coin, double or nothing')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true))
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true))
       .addStringOption((o) => o.setName('choice').setDescription('Heads or tails').setRequired(true)
         .addChoices({ name: '🟡 Heads', value: 'heads' }, { name: '⚪ Tails', value: 'tails' })),
 
     new SlashCommandBuilder()
       .setName('roulette')
-      .setDescription('Spin Teal roulette')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true))
+      .setDescription('Spin Tokens roulette')
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true))
       .addStringOption((o) => o.setName('type').setDescription('red / black / green / even / odd / 0-36').setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('blackjack')
-      .setDescription('Play blackjack for Teal')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true)),
+      .setDescription('Play blackjack for Tokens')
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('crash')
       .setDescription('Cash out before the multiplier crashes')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true)),
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('mines')
       .setDescription('Uncover gems, avoid mines')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true))
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true))
       .addIntegerOption((o) => o.setName('mines').setDescription('Number of mines (1-20)').setMinValue(1).setMaxValue(20).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('towers')
       .setDescription('Climb the tower and pick safe tiles')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true))
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true))
       .addStringOption((o) => o.setName('difficulty').setDescription('Game difficulty')
         .addChoices(
           { name: '🟢 Easy (1 bomb)', value: 'easy' },
@@ -480,13 +509,13 @@ export function getEconomyCommands() {
     new SlashCommandBuilder()
       .setName('keno')
       .setDescription('Pick numbers and match the draw')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true))
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true))
       .addStringOption((o) => o.setName('picks').setDescription('2-10 picks from 1-80, comma separated').setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('limbo')
       .setDescription('Set a target multiplier and try to beat it')
-      .addIntegerOption((o) => o.setName('bet').setDescription('Teal amount to bet').setMinValue(1).setRequired(true))
+      .addIntegerOption((o) => o.setName('bet').setDescription('Tokens amount to bet').setMinValue(1).setRequired(true))
       .addNumberOption((o) => o.setName('target').setDescription('Target multiplier (1.01-100)').setMinValue(1.01).setMaxValue(100).setRequired(true))
   ].map((command) => command.toJSON());
 }
@@ -497,7 +526,7 @@ export async function handleEconomyChatInput(interaction) {
 
   const name = interaction.commandName;
   const economyCommands = new Set([
-    'balance', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
+    'balance', 'daily', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
     'unfreeze', 'slots', 'coinflip', 'roulette', 'blackjack', 'crash',
     'mines', 'towers', 'keno', 'limbo'
   ]);
@@ -538,6 +567,9 @@ export async function handleEconomyChatInput(interaction) {
     switch (name) {
       case 'balance':
         await cmdBalance(commandInteraction);
+        return true;
+      case 'daily':
+        await cmdDaily(commandInteraction);
         return true;
       case 'leaderboard':
         await cmdLeaderboard(commandInteraction);
@@ -594,10 +626,10 @@ export async function handleEconomyChatInput(interaction) {
         return false;
     }
   } catch (error) {
-    console.error(`Teal economy command error (${name}):`, error?.message || error);
+    console.error(`Tokens economy command error (${name}):`, error?.message || error);
 
     const payload = {
-      embeds: [baseEmbed('❌ Teal Economy Error', COLORS.red).setDescription('Something went wrong while processing that command.')]
+      embeds: [baseEmbed('❌ Tokens Economy Error', COLORS.red).setDescription('Something went wrong while processing that command.')]
     };
 
     if (interaction.replied || interaction.deferred) {
