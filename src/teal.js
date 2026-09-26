@@ -2,7 +2,8 @@ import { EmbedBuilder } from 'discord.js';
 import { config } from './config.js';
 import { request } from './db.js';
 
-export const TEAL = 'Teal';
+export const TEAL = 'Tokens';
+export const DAILY_REWARD = 250;
 
 export const COLORS = {
   gold: 0xF4C542,
@@ -18,12 +19,12 @@ export function baseEmbed(title, color = COLORS.gold) {
     .setColor(color)
     .setTitle(title)
     .setTimestamp()
-    .setFooter({ text: 'Teal Economy • Elias' });
+    .setFooter({ text: 'Tokens Economy • Elias' });
 }
 
 async function getUser(guildId, discordId) {
   const rows = await request('teal_economy', {
-    query: `?select=guild_id,discord_id,balance,total_wagered,stats,updated_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&limit=1`
+    query: `?select=guild_id,discord_id,balance,total_wagered,total_deposited,total_daily_claimed,last_daily,stats,updated_at&guild_id=eq.${encode(guildId)}&discord_id=eq.${encode(discordId)}&limit=1`
   });
 
   if (rows?.[0]) {
@@ -31,13 +32,16 @@ async function getUser(guildId, discordId) {
       ...rows[0],
       balance: Number(rows[0].balance || 0),
       total_wagered: Number(rows[0].total_wagered || 0),
+      total_deposited: Number(rows[0].total_deposited || 0),
+      total_daily_claimed: Number(rows[0].total_daily_claimed || 0),
+      last_daily: Number(rows[0].last_daily || 0),
       stats: rows[0].stats && typeof rows[0].stats === 'object' ? rows[0].stats : {}
     };
   }
 
   const created = await request('teal_economy', {
     method: 'POST',
-    body: [{ guild_id: guildId, discord_id: discordId, balance: 0, total_wagered: 0, stats: {} }],
+    body: [{ guild_id: guildId, discord_id: discordId, balance: 0, total_wagered: 0, total_deposited: 0, total_daily_claimed: 0, last_daily: 0, stats: {} }],
     prefer: 'return=representation'
   });
 
@@ -46,6 +50,9 @@ async function getUser(guildId, discordId) {
     discord_id: discordId,
     balance: 0,
     total_wagered: 0,
+    total_deposited: 0,
+    total_daily_claimed: 0,
+    last_daily: 0,
     stats: {}
   };
 
@@ -64,6 +71,9 @@ async function saveUser(user) {
     body: {
       balance: Math.max(0, Math.floor(Number(user.balance) || 0)),
       total_wagered: Math.max(0, Math.floor(Number(user.total_wagered) || 0)),
+      total_deposited: Math.max(0, Math.floor(Number(user.total_deposited) || 0)),
+      total_daily_claimed: Math.max(0, Math.floor(Number(user.total_daily_claimed) || 0)),
+      last_daily: Math.max(0, Math.floor(Number(user.last_daily) || 0)),
       stats: user.stats && typeof user.stats === 'object' ? user.stats : {},
       updated_at: new Date().toISOString()
     },
@@ -74,6 +84,45 @@ async function saveUser(user) {
 
 export async function getBalance(guildId, discordId) {
   return (await getUser(guildId, discordId)).balance;
+}
+
+export async function depositBalance(guildId, discordId, amount) {
+  const value = Math.floor(Number(amount) || 0);
+  if (value <= 0) return getBalance(guildId, discordId);
+
+  const user = await getUser(guildId, discordId);
+  user.balance += value;
+  user.total_deposited += value;
+  await saveUser(user);
+  return user.balance;
+}
+
+export async function claimDaily(guildId, discordId) {
+  const user = await getUser(guildId, discordId);
+  const now = Date.now();
+  const cooldown = 24 * 60 * 60 * 1000;
+  const remaining = cooldown - (now - user.last_daily);
+
+  if (remaining > 0) {
+    return {
+      claimed: false,
+      remaining,
+      reward: DAILY_REWARD,
+      balance: user.balance
+    };
+  }
+
+  user.balance += DAILY_REWARD;
+  user.total_daily_claimed += DAILY_REWARD;
+  user.last_daily = now;
+  await saveUser(user);
+
+  return {
+    claimed: true,
+    remaining: cooldown,
+    reward: DAILY_REWARD,
+    balance: user.balance
+  };
 }
 
 export async function setBalance(guildId, discordId, amount) {
@@ -147,7 +196,7 @@ export async function resetBalance(guildId, discordId) {
   return setBalance(guildId, discordId, 0);
 }
 
-export function formatTeal(amount) {
+export function formatTokens(amount) {
   return `${Math.floor(Number(amount) || 0).toLocaleString()} ${TEAL}`;
 }
 
