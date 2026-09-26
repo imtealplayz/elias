@@ -87,9 +87,31 @@ async function cmdBalance(interaction) {
 
   await interaction.reply({
     embeds: [
-      baseEmbed('💰 Tokens Balance', COLORS.teal)
+      baseEmbed(`💰 ${interaction.user.username}'s Balance`, COLORS.teal)
         .setDescription(`You have **${formatTokens(balance)}**.`)
         .setThumbnail(interaction.user.displayAvatarURL())
+        .setFooter({ text: 'Use /tip to tip another user • Use /rain to rain to multiple ppl at once' })
+    ]
+  });
+}
+
+async function cmdGames(interaction) {
+  const games = [
+    '🎰 **Slots** — Spin the reels and match symbols.',
+    '🪙 **Coinflip** — Pick heads or tails and double your bet if you win.',
+    '🎡 **Roulette** — Bet on red, black, green, even, odd, or a number.',
+    '🃏 **Blackjack** — Beat the dealer without going over 21.',
+    '📈 **Crash** — Watch the multiplier rise and cash out before it crashes.',
+    '💣 **Mines** — Find gems while avoiding hidden mines.',
+    '🗼 **Towers** — Climb floors by picking a safe tile.',
+    '🎱 **Keno** — Coming soon in a future update.',
+    '🎯 **Limbo** — Set a target multiplier and try to beat it.'
+  ];
+
+  await interaction.reply({
+    embeds: [
+      baseEmbed('🎮 Games', COLORS.purple)
+        .setDescription(games.join('\\n\\n'))
     ]
   });
 }
@@ -477,7 +499,11 @@ export function getEconomyCommands() {
   return [
     new SlashCommandBuilder()
       .setName('balance')
-      .setDescription('View your Tokens currency balance'),
+      .setDescription('View your currency balance'),
+
+    new SlashCommandBuilder()
+      .setName('games')
+      .setDescription('View all available games'),
 
     new SlashCommandBuilder()
       .setName('daily')
@@ -593,7 +619,7 @@ export async function handleEconomyChatInput(interaction) {
 
   const name = interaction.commandName;
   const economyCommands = new Set([
-    'balance', 'daily', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
+    'balance', 'games', 'daily', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
     'unfreeze', 'slots', 'coinflip', 'roulette', 'blackjack', 'crash',
     'mines', 'towers', 'keno', 'limbo'
   ]);
@@ -634,6 +660,9 @@ export async function handleEconomyChatInput(interaction) {
     switch (name) {
       case 'balance':
         await cmdBalance(commandInteraction);
+        return true;
+      case 'games':
+        await cmdGames(commandInteraction);
         return true;
       case 'daily':
         await cmdDaily(commandInteraction);
