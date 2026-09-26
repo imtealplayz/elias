@@ -22,3 +22,10 @@ create index if not exists teal_economy_guild_wagered_idx
 alter table public.teal_economy add column if not exists total_deposited bigint not null default 0 check (total_deposited >= 0);
 alter table public.teal_economy add column if not exists total_daily_claimed bigint not null default 0 check (total_daily_claimed >= 0);
 alter table public.teal_economy add column if not exists last_daily bigint not null default 0 check (last_daily >= 0);
+
+
+-- Seven-day withdrawal lock metadata for stock holdings.
+alter table public.stock_holdings add column if not exists reserved_quantity integer not null default 0;
+alter table public.stock_holdings add column if not exists locked_until timestamptz;
+update public.stock_holdings set reserved_quantity = 0 where reserved_quantity is null;
+create index if not exists stock_holdings_locked_until_idx on public.stock_holdings(locked_until);
