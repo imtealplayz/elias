@@ -16,3 +16,9 @@ create index if not exists teal_economy_guild_balance_idx
 
 create index if not exists teal_economy_guild_wagered_idx
   on public.teal_economy(guild_id, total_wagered desc);
+
+
+-- Daily/deposit tracking fields used by the Tokens wallet.
+alter table public.teal_economy add column if not exists total_deposited bigint not null default 0 check (total_deposited >= 0);
+alter table public.teal_economy add column if not exists total_daily_claimed bigint not null default 0 check (total_daily_claimed >= 0);
+alter table public.teal_economy add column if not exists last_daily bigint not null default 0 check (last_daily >= 0);
