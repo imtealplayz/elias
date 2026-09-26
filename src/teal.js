@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { request } from './db.js';
 
 export const TEAL = 'Tokens';
+
 export const DAILY_REWARDS = [
   { label: 'Deposit Boost +10%', value: 0, type: 'bonus', icon: '📈', weight: 24 },
   { label: 'Deposit Boost +25%', value: 0, type: 'bonus', icon: '🚀', weight: 20 },
@@ -18,10 +19,12 @@ export const DAILY_REWARDS = [
 function spinDailyReward() {
   const total = DAILY_REWARDS.reduce((sum, item) => sum + item.weight, 0);
   let roll = Math.random() * total;
+
   for (const item of DAILY_REWARDS) {
     roll -= item.weight;
     if (roll <= 0) return item;
   }
+
   return DAILY_REWARDS[0];
 }
 
@@ -61,7 +64,16 @@ async function getUser(guildId, discordId) {
 
   const created = await request('teal_economy', {
     method: 'POST',
-    body: [{ guild_id: guildId, discord_id: discordId, balance: 0, total_wagered: 0, total_deposited: 0, total_daily_claimed: 0, last_daily: 0, stats: {} }],
+    body: [{
+      guild_id: guildId,
+      discord_id: discordId,
+      balance: 0,
+      total_wagered: 0,
+      total_deposited: 0,
+      total_daily_claimed: 0,
+      last_daily: 0,
+      stats: {}
+    }],
     prefer: 'return=representation'
   });
 
@@ -80,6 +92,9 @@ async function getUser(guildId, discordId) {
     ...row,
     balance: Number(row.balance || 0),
     total_wagered: Number(row.total_wagered || 0),
+    total_deposited: Number(row.total_deposited || 0),
+    total_daily_claimed: Number(row.total_daily_claimed || 0),
+    last_daily: Number(row.last_daily || 0),
     stats: row.stats && typeof row.stats === 'object' ? row.stats : {}
   };
 }
@@ -89,34 +104,22 @@ async function saveUser(user) {
     method: 'PATCH',
     query: `?guild_id=eq.${encode(user.guild_id)}&discord_id=eq.${encode(user.discord_id)}`,
     body: {
-      balance: Math.max(0, Math.floor(Number(user.balance)export async function claimDaily(guildId, discordId) {
-  const user = await getUser(guildId, discordId);
-  const now = Date.now();
-  const cooldown = 24 * 60 * 60 * 1000;
-  const remaining = cooldown - (now - user.last_daily);
+      balance: Math.max(0, Math.floor(Number(user.balance) || 0)),
+      total_wagered: Math.max(0, Math.floor(Number(user.total_wagered) || 0)),
+      total_deposited: Math.max(0, Math.floor(Number(user.total_deposited) || 0)),
+      total_daily_claimed: Math.max(0, Math.floor(Number(user.total_daily_claimed) || 0)),
+      last_daily: Math.max(0, Math.floor(Number(user.last_daily) || 0)),
+      stats: user.stats && typeof user.stats === 'object' ? user.stats : {},
+      updated_at: new Date().toISOString()
+    },
+    prefer: 'return=representation'
+  });
 
-  if (remaining > 0) {
-    return { claimed: false, remaining, reward: null, balance: user.balance };
-  }
-
-  const reward = spinDailyReward();
-  user.last_daily = now;
-
-  if (reward.type === 'tokens' && reward.value > 0) {
-    user.balance += reward.value;
-    user.total_daily_claimed += reward.value;
-  }
-
-  await saveUser(user);
-
-  return {
-    claimed: true,
-    remaining: cooldown,
-    reward,
-    balance: user.balance
-  };
+  return rows?.[0] || null;
 }
-er(guildId, discordId)).balance;
+
+export async function getBalance(guildId, discordId) {
+  return (await getUser(guildId, discordId)).balance;
 }
 
 export async function depositBalance(guildId, discordId, amount) {
@@ -140,20 +143,25 @@ export async function claimDaily(guildId, discordId) {
     return {
       claimed: false,
       remaining,
-      reward: DAILY_REWARD,
+      reward: null,
       balance: user.balance
     };
   }
 
-  user.balance += DAILY_REWARD;
-  user.total_daily_claimed += DAILY_REWARD;
+  const reward = spinDailyReward();
   user.last_daily = now;
+
+  if (reward.type === 'tokens' && reward.value > 0) {
+    user.balance += reward.value;
+    user.total_daily_claimed += reward.value;
+  }
+
   await saveUser(user);
 
   return {
     claimed: true,
     remaining: cooldown,
-    reward: DAILY_REWARD,
+    reward,
     balance: user.balance
   };
 }
@@ -168,6 +176,7 @@ export async function setBalance(guildId, discordId, amount) {
 export async function addBalance(guildId, discordId, amount) {
   const value = Math.floor(Number(amount) || 0);
   if (value <= 0) return getBalance(guildId, discordId);
+
   const user = await getUser(guildId, discordId);
   user.balance += value;
   await saveUser(user);
@@ -179,6 +188,7 @@ export async function removeBalance(guildId, discordId, amount) {
   if (value <= 0) return getBalance(guildId, discordId);
 
   const user = await getUser(guildId, discordId);
+
   if (user.balance < value) {
     const error = new Error('INSUFFICIENT_FUNDS');
     error.balance = user.balance;
@@ -204,8 +214,11 @@ export async function recordGame(guildId, discordId, game, bet, profit) {
   user.stats[game].wagered = Number(user.stats[game].wagered || 0) + wager;
   user.stats[game].profit = Number(user.stats[game].profit || 0) + numericProfit;
 
-  if (numericProfit > 0) user.stats[game].wins = Number(user.stats[game].wins || 0) + 1;
-  else if (numericProfit < 0) user.stats[game].losses = Number(user.stats[game].losses || 0) + 1;
+  if (numericProfit > 0) {
+    user.stats[game].wins = Number(user.stats[game].wins || 0) + 1;
+  } else if (numericProfit < 0) {
+    user.stats[game].losses = Number(user.stats[game].losses || 0) + 1;
+  }
 
   await saveUser(user);
   return user;
