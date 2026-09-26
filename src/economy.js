@@ -109,30 +109,55 @@ async function cmdDaily(interaction) {
   }
 
   const reward = result.reward;
-  const index = DAILY_REWARDS.findIndex((item) => item.label === reward.label);
-  const frames = [
-    DAILY_REWARDS[Math.floor(Math.random() * DAILY_REWARDS.length)],
-    DAILY_REWARDS[Math.floor(Math.random() * DAILY_REWARDS.length)],
-    DAILY_REWARDS[Math.floor(Math.random() * DAILY_REWARDS.length)],
-    DAILY_REWARDS[Math.max(0, index - 1)],
-    reward
-  ];
+
+  // Show every possible prize at once, then move a roulette selector
+  // through the shuffled prize board until it lands on the reward.
+  const prizes = [...DAILY_REWARDS].sort(() => Math.random() - 0.5);
+  const targetIndex = prizes.findIndex((item) => item.label === reward.label);
+
+  function renderBoard(selectedIndex, spinning = true) {
+    const cells = prizes.map((item, index) => {
+      const marker = index === selectedIndex ? '👉' : '　';
+      const label = item.label.replace('Deposit Boost ', '');
+      return `${marker} ${item.icon} **${label}**`;
+    });
+
+    const rows = [];
+    for (let i = 0; i < cells.length; i += 3) {
+      rows.push(cells.slice(i, i + 3).join('   │   '));
+    }
+
+    return `${spinning ? '🎰 **Roulette spinning...**' : '🎯 **Locked in!**'}\n\n${rows.join('\n')}\n\n*All possible daily prizes are shown above.*`;
+  }
 
   await interaction.reply({
     embeds: [
-      baseEmbed('🎡 Daily Reward', COLORS.purple)
-        .setDescription(`🎰 **Spinning...**\n\n▶  ${frames[0].icon} **${frames[0].label}**  ◀`)
+      baseEmbed('🎡 Daily Reward Roulette', COLORS.purple)
+        .setDescription(renderBoard(0))
     ]
   });
 
-  for (let i = 1; i < frames.length; i++) {
-    await new Promise((resolve) => setTimeout(resolve, i === frames.length - 1 ? 1200 : 650));
+  const startIndex = Math.floor(Math.random() * prizes.length);
+  let currentIndex = startIndex;
+
+  // Fast at first, then progressively slower for the final landing.
+  const steps = 12 + ((targetIndex - startIndex + prizes.length) % prizes.length) + prizes.length * 2;
+
+  for (let step = 0; step < steps; step++) {
+    const progress = step / Math.max(1, steps - 1);
+    const delay = Math.round(180 + Math.pow(progress, 2.2) * 650);
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    currentIndex = (currentIndex + 1) % prizes.length;
+    if (step === steps - 1) currentIndex = targetIndex;
+
     await interaction.editReply({
       embeds: [
-        baseEmbed('🎡 Daily Reward', i === frames.length - 1 ? COLORS.green : COLORS.purple)
-          .setDescription(i === frames.length - 1
-            ? `🎉 **You landed on ${reward.icon} ${reward.label}!**`
-            : `🎰 **Spinning...**\n\n▶  ${frames[i].icon} **${frames[i].label}**  ◀`)
+        baseEmbed(
+          '🎡 Daily Reward Roulette',
+          step === steps - 1 ? COLORS.green : COLORS.purple
+        ).setDescription(renderBoard(currentIndex, step !== steps - 1))
       ]
     });
   }
@@ -141,12 +166,20 @@ async function cmdDaily(interaction) {
     ? `You received **+${formatTokens(reward.value)}**.`
     : `You won **${reward.icon} ${reward.label}**. It has been recorded for your account.`;
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 700));
+
   await interaction.editReply({
     embeds: [
-      baseEmbed('🎁 Daily Reward', reward.type === 'tokens' ? COLORS.green : COLORS.purple)
-        .setDescription(resultText)
-        .addFields({ name: 'New Balance', value: formatTokens(result.balance), inline: true })
+      baseEmbed(
+        '🎁 Daily Reward',
+        reward.type === 'tokens' ? COLORS.green : COLORS.purple
+      )
+        .setDescription(`🎉 **You landed on ${reward.icon} ${reward.label}!**\n\n${resultText}`)
+        .addFields({
+          name: 'New Balance',
+          value: formatTokens(result.balance),
+          inline: true
+        })
     ]
   });
 }
