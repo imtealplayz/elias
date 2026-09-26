@@ -45,9 +45,13 @@ function buildStocksComponents(stocks) {
     .addSeparatorComponents(divider())
     .addTextDisplayComponents(text('Each stock has **150 total shares**. Buying increases its price; selling decreases it.'))
     .addSeparatorComponents(divider())
-    .addTextDisplayComponents(text('Use **/stocks buy** to buy shares or **/stocks sell** to sell shares.'))
+    .addTextDisplayComponents(text('Buy and sell directly from this market panel. Stocks bought here are locked from external withdrawal for **7 days**.'))
     .addSeparatorComponents(divider())
-    .addActionRowComponents(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('stocks:refresh').setLabel('Refresh').setStyle(ButtonStyle.Secondary)));
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('stocks:buy').setLabel('Buy Stock').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('stocks:sell').setLabel('Sell Stock').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('stocks:refresh').setLabel('Refresh').setStyle(ButtonStyle.Secondary)
+    ));
 
   return [container];
 }
