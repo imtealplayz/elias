@@ -109,15 +109,43 @@ async function cmdDaily(interaction) {
   }
 
   const reward = result.reward;
-  const isTokenReward = reward.type === 'tokens';
-  const description = isTokenReward
-    ? `You received **+${formatTokens(reward.value)}**.`
-    : `You landed on **${reward.icon} ${reward.label}**!\n\nThis bonus has been recorded as a daily reward.`;
+  const index = DAILY_REWARDS.findIndex((item) => item.label === reward.label);
+  const frames = [
+    DAILY_REWARDS[Math.floor(Math.random() * DAILY_REWARDS.length)],
+    DAILY_REWARDS[Math.floor(Math.random() * DAILY_REWARDS.length)],
+    DAILY_REWARDS[Math.floor(Math.random() * DAILY_REWARDS.length)],
+    DAILY_REWARDS[Math.max(0, index - 1)],
+    reward
+  ];
 
   await interaction.reply({
     embeds: [
-      baseEmbed('🎡 Daily Reward', isTokenReward ? COLORS.green : COLORS.purple)
-        .setDescription(description)
+      baseEmbed('🎡 Daily Reward', COLORS.purple)
+        .setDescription(`🎰 **Spinning...**\n\n▶  ${frames[0].icon} **${frames[0].label}**  ◀`)
+    ]
+  });
+
+  for (let i = 1; i < frames.length; i++) {
+    await new Promise((resolve) => setTimeout(resolve, i === frames.length - 1 ? 1200 : 650));
+    await interaction.editReply({
+      embeds: [
+        baseEmbed('🎡 Daily Reward', i === frames.length - 1 ? COLORS.green : COLORS.purple)
+          .setDescription(i === frames.length - 1
+            ? `🎉 **You landed on ${reward.icon} ${reward.label}!**`
+            : `🎰 **Spinning...**\n\n▶  ${frames[i].icon} **${frames[i].label}**  ◀`)
+      ]
+    });
+  }
+
+  const resultText = reward.type === 'tokens'
+    ? `You received **+${formatTokens(reward.value)}**.`
+    : `You won **${reward.icon} ${reward.label}**. It has been recorded for your account.`;
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await interaction.editReply({
+    embeds: [
+      baseEmbed('🎁 Daily Reward', reward.type === 'tokens' ? COLORS.green : COLORS.purple)
+        .setDescription(resultText)
         .addFields({ name: 'New Balance', value: formatTokens(result.balance), inline: true })
     ]
   });
