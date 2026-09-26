@@ -8,7 +8,7 @@ import { config } from './config.js';
 import {
   COLORS,
   TEAL,
-  DAILY_REWARD,
+  DAILY_REWARDS,
   addBalance,
   baseEmbed,
   claimDaily,
@@ -108,10 +108,16 @@ async function cmdDaily(interaction) {
     });
   }
 
+  const reward = result.reward;
+  const isTokenReward = reward.type === 'tokens';
+  const description = isTokenReward
+    ? `You received **+${formatTokens(reward.value)}**.`
+    : `You landed on **${reward.icon} ${reward.label}**!\n\nThis bonus has been recorded as a daily reward.`;
+
   await interaction.reply({
     embeds: [
-      baseEmbed('🎁 Daily Reward', COLORS.green)
-        .setDescription(`You received **+${formatTokens(result.reward)}**.`)
+      baseEmbed('🎡 Daily Reward', isTokenReward ? COLORS.green : COLORS.purple)
+        .setDescription(description)
         .addFields({ name: 'New Balance', value: formatTokens(result.balance), inline: true })
     ]
   });
