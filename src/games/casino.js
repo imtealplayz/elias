@@ -744,7 +744,7 @@ async function sendMinesBoard(interaction, userId, guildId, isNew = false) {
       {
         name: "Next Click",
         value: canContinue
-          ? `${nextMultiplier}× • ${nextPotential.toLocaleString()} ${R}`
+          ? `\`${nextPotential.toLocaleString()} ${R}\``
           : "🏆 All safe tiles found",
         inline: true
       }
@@ -977,7 +977,7 @@ async function sendTowerEmbed(interaction, userId, guildId, isNew, gameOver = fa
       {
         name: "Next Click",
         value: canContinue
-          ? `${nextMultiplier}× • ${nextPotential.toLocaleString()} ${R}`
+          ? `\`${nextPotential.toLocaleString()} ${R}\``
           : "🏆 Top reached",
         inline: true
       }
