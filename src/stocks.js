@@ -389,7 +389,16 @@ export async function handleStocksInteraction(interaction) {
 
     if (interaction.customId === 'stocks:refresh') {
       await interaction.deferUpdate();
-      await refreshStockPanel(interaction.channelId);
+      try {
+        const stocks = await getStocks();
+        await interaction.editReply({
+          flags: MessageFlags.IsComponentsV2,
+          components: buildStocksComponents(stocks)
+        });
+        startStockPanelRefresh(interaction.message);
+      } catch (error) {
+        console.warn('Manual stock refresh failed:', error?.message || error);
+      }
       return true;
     }
   }
