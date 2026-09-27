@@ -5,9 +5,9 @@ import { request } from './db.js';
 export const TEAL = 'Tokens';
 
 export const DAILY_REWARDS = [
-  { label: 'Deposit Boost +10%', value: 0, type: 'bonus', icon: '📈', weight: 24 },
-  { label: 'Deposit Boost +25%', value: 0, type: 'bonus', icon: '🚀', weight: 20 },
-  { label: 'Cashback 5%', value: 0, type: 'bonus', icon: '💸', weight: 18 },
+  { label: 'Deposit Bonus +10%', value: 10, type: 'deposit_bonus', icon: '📈', weight: 24 },
+  { label: 'Deposit Bonus +25%', value: 25, type: 'deposit_bonus', icon: '🚀', weight: 20 },
+  { label: 'Deposit Cashback 5%', value: 5, type: 'deposit_bonus', icon: '💸', weight: 18 },
   { label: '5 Tokens', value: 5, type: 'tokens', icon: '💰', weight: 10 },
   { label: '10 Tokens', value: 10, type: 'tokens', icon: '💎', weight: 6 },
   { label: '25 Tokens', value: 25, type: 'tokens', icon: '💎', weight: 4 },
@@ -124,13 +124,27 @@ export async function getBalance(guildId, discordId) {
 
 export async function depositBalance(guildId, discordId, amount) {
   const value = Math.floor(Number(amount) || 0);
-  if (value <= 0) return getBalance(guildId, discordId);
+  if (value <= 0) {
+    const balance = await getBalance(guildId, discordId);
+    return { amount: 0, bonusPercent: 0, bonusAmount: 0, credited: 0, balance };
+  }
 
   const user = await getUser(guildId, discordId);
-  user.balance += value;
+  const bonusPercent = Math.max(0, Math.min(100, Math.floor(Number(user.stats.next_deposit_bonus_percent) || 0)));
+  const bonusAmount = Math.floor(value * bonusPercent / 100);
+  const credited = value + bonusAmount;
+
+  user.balance += credited;
   user.total_deposited += value;
+
+  if (bonusPercent > 0) {
+    delete user.stats.next_deposit_bonus_percent;
+    delete user.stats.next_deposit_bonus_label;
+  }
+
   await saveUser(user);
-  return user.balance;
+
+  return { amount: value, bonusPercent, bonusAmount, credited, balance: user.balance };
 }
 
 export async function claimDaily(guildId, discordId) {
@@ -154,6 +168,14 @@ export async function claimDaily(guildId, discordId) {
   if (reward.type === 'tokens' && reward.value > 0) {
     user.balance += reward.value;
     user.total_daily_claimed += reward.value;
+  }
+
+  if (reward.type === 'deposit_bonus' && reward.value > 0) {
+    const currentBonus = Math.max(0, Math.floor(Number(user.stats.next_deposit_bonus_percent) || 0));
+    if (reward.value >= currentBonus) {
+      user.stats.next_deposit_bonus_percent = reward.value;
+      user.stats.next_deposit_bonus_label = reward.label;
+    }
   }
 
   await saveUser(user);
