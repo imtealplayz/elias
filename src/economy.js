@@ -186,7 +186,9 @@ async function cmdDaily(interaction) {
 
   const resultText = reward.type === 'tokens'
     ? `You received **+${formatTokens(reward.value)}**.`
-    : `You won **${reward.icon} ${reward.label}**. It has been recorded for your account.`;
+    : reward.type === 'deposit_bonus'
+      ? `Your **${reward.label}** is saved for your **next /deposit**.`
+      : `You won **${reward.icon} ${reward.label}**. It has been recorded for your account.`;
 
   await new Promise((resolve) => setTimeout(resolve, 700));
 
@@ -479,6 +481,30 @@ async function cmdTake(interaction) {
   });
 }
 
+async function cmdDeposit(interaction) {
+  if (!(await requireOwner(interaction))) return;
+
+  const target = interaction.options.getUser('user');
+  const amount = interaction.options.getInteger('amount');
+
+  if (!target || target.bot || !Number.isInteger(amount) || amount < 1) {
+    return usageError(interaction, 'Provide a valid user and a positive verified deposit amount.');
+  }
+
+  const result = await depositBalance(interaction.guildId, target.id, amount);
+
+  await interaction.reply({
+    embeds: [
+      baseEmbed('💳 Deposit Credited', COLORS.green).addFields(
+        { name: 'User', value: `<@${target.id}>`, inline: true },
+        { name: 'Deposit', value: formatTokens(result.amount), inline: true },
+        { name: 'Bonus', value: result.bonusAmount > 0 ? `+${formatTokens(result.bonusAmount)} (${result.bonusPercent}%)` : 'None', inline: true },
+        { name: 'Credited', value: formatTokens(result.credited), inline: true },
+        { name: 'New Balance', value: formatTokens(result.balance), inline: true }
+      )
+    ]
+  });
+}
 async function cmdResetBalance(interaction) {
   if (!(await requireOwner(interaction))) return;
 
@@ -543,6 +569,13 @@ export function getEconomyCommands() {
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .addUserOption((o) => o.setName('user').setDescription('User to take Tokens from').setRequired(true))
       .addIntegerOption((o) => o.setName('amount').setDescription('Tokens amount').setMinValue(1).setRequired(true)),
+
+    new SlashCommandBuilder()
+      .setName('deposit')
+      .setDescription('Credit a verified deposit to a user')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .addUserOption((o) => o.setName('user').setDescription('User whose deposit was verified').setRequired(true))
+      .addIntegerOption((o) => o.setName('amount').setDescription('Verified deposit amount in Tokens').setMinValue(1).setRequired(true)),
 
     new SlashCommandBuilder()
       .setName('resetbalance')
@@ -619,7 +652,7 @@ export async function handleEconomyChatInput(interaction) {
 
   const name = interaction.commandName;
   const economyCommands = new Set([
-    'balance', 'games', 'daily', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'resetbalance',
+    'balance', 'games', 'daily', 'leaderboard', 'profile', 'tip', 'rain', 'give', 'take', 'deposit', 'resetbalance',
     'unfreeze', 'slots', 'coinflip', 'roulette', 'blackjack', 'crash',
     'mines', 'towers', 'keno', 'limbo'
   ]);
@@ -684,6 +717,9 @@ export async function handleEconomyChatInput(interaction) {
         return true;
       case 'take':
         await cmdTake(commandInteraction);
+        return true;
+      case 'deposit':
+        await cmdDeposit(commandInteraction);
         return true;
       case 'resetbalance':
         await cmdResetBalance(commandInteraction);
