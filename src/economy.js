@@ -12,6 +12,7 @@ import {
   addBalance,
   baseEmbed,
   claimDaily,
+  depositBalance,
   formatTokens,
   getBalance,
   getEconomyProfile,
