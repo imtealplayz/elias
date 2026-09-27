@@ -98,21 +98,22 @@ async function cmdBalance(interaction) {
 
 async function cmdGames(interaction) {
   const games = [
-    '🎰 **Slots** — Spin the reels and match symbols.',
-    '🪙 **Coinflip** — Pick heads or tails and double your bet if you win.',
-    '🎡 **Roulette** — Bet on red, black, green, even, odd, or a number.',
-    '🃏 **Blackjack** — Beat the dealer without going over 21.',
-    '📈 **Crash** — Watch the multiplier rise and cash out before it crashes.',
-    '💣 **Mines** — Find gems while avoiding hidden mines.',
-    '🗼 **Towers** — Climb floors by picking a safe tile.',
-    '🎱 **Keno** — Coming soon in a future update.',
-    '🎯 **Limbo** — Set a target multiplier and try to beat it.'
+    { name: '🎰 Slots', value: '`/slots <bet>`\nSpin three reels and match symbols for a payout.' },
+    { name: '🪙 Coinflip', value: '`/coinflip <bet> <choice>`\nPick Heads or Tails and win 2× your bet.' },
+    { name: '🎡 Roulette', value: '`/roulette <bet> <type>`\nBet on red, black, green, even, odd, or a number.' },
+    { name: '🃏 Blackjack', value: '`/blackjack <bet>`\nBeat the dealer without going over 21.' },
+    { name: '📈 Crash', value: '`/crash <bet>`\nCash out before the multiplier crashes.' },
+    { name: '💣 Mines', value: '`/mines <bet> <mines>`\nReveal gems while avoiding hidden mines.' },
+    { name: '🗼 Towers', value: '`/towers <bet> [difficulty]`\nClimb floors by choosing safe tiles.' },
+    { name: '🎯 Limbo', value: '`/limbo <bet> <target>`\nSet a target multiplier and try to beat it.' },
+    { name: '🎱 Keno', value: '`/keno <bet> <picks>`\nComing soon.' }
   ];
 
   await interaction.reply({
     embeds: [
       baseEmbed('🎮 Games', COLORS.purple)
-        .setDescription(games.join('\\n\\n'))
+        .setDescription('Choose a game below.')
+        .addFields(games)
     ]
   });
 }
@@ -141,7 +142,7 @@ async function cmdDaily(interaction) {
   function renderBoard(selectedIndex, spinning = true) {
     const cells = prizes.map((item, index) => {
       const marker = index === selectedIndex ? '👉' : '　';
-      const label = item.label.replace('Deposit Boost ', '');
+      const label = item.label.replace('Deposit Bonus ', '');
       return `${marker} ${item.icon} **${label}**`;
     });
 
@@ -163,12 +164,11 @@ async function cmdDaily(interaction) {
   const startIndex = Math.floor(Math.random() * prizes.length);
   let currentIndex = startIndex;
 
-  // Fast at first, then progressively slower for the final landing.
-  const steps = 12 + ((targetIndex - startIndex + prizes.length) % prizes.length) + prizes.length * 2;
+  // Keep the wheel short: a few selector updates, then land on the result.
+  const steps = 5;
 
   for (let step = 0; step < steps; step++) {
-    const progress = step / Math.max(1, steps - 1);
-    const delay = Math.round(180 + Math.pow(progress, 2.2) * 650);
+    const delay = step === steps - 1 ? 300 : 180;
 
     await new Promise((resolve) => setTimeout(resolve, delay));
 
@@ -190,8 +190,6 @@ async function cmdDaily(interaction) {
     : reward.type === 'deposit_bonus'
       ? `Your **${reward.label}** is saved for your **next /deposit**.`
       : `You won **${reward.icon} ${reward.label}**. It has been recorded for your account.`;
-
-  await new Promise((resolve) => setTimeout(resolve, 700));
 
   await interaction.editReply({
     embeds: [
